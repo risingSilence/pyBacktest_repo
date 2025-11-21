@@ -1,0 +1,3 @@
+- HTF 1h darstellungsprobleme fixen
+- HTF auch 4h und größer die trades printen (phase 3 boxes)
+- TF via tippen ändern wie bei TradingView

@@ -3576,25 +3576,50 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
         // 4e) Phase3-Trades (Positionsbox + Entry->Exit-Linie)
         // -----------------------------------------------------------
 
-        function buildPhase3Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx) {
+        function buildPhase3Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx, pane) {
             const traces = [];
             if (!PHASE3_TRADES || !PHASE3_TRADES.length) return traces;
-
-            // Keine Trades auf H4+ zeichnen
-            if (tf === "H4" || tf === "D" || tf === "W" || tf === "M") return traces;
 
             const minIdx = windowStartIdx;
             const maxIdx = windowEndIdx;
 
-            for (const tr of PHASE3_TRADES) {
-                const isBuy = tr.direction === "buy";
+            // ---------------------------------------------------
+            // Zeit-Filter für HTF-Snapshot (Zukunft ausblenden)
+            // ---------------------------------------------------
+            let maxAllowedTs = null;
+            if (pane === "left") {
+                if (HTF_SNAPSHOT_MAX_SIGNAL_TS != null && isFinite(HTF_SNAPSHOT_MAX_SIGNAL_TS)) {
+                    maxAllowedTs = HTF_SNAPSHOT_MAX_SIGNAL_TS;
+                } else if (
+                    HTF_FOLLOW_ACTIVE &&
+                    HTF_FOLLOW_INFO &&
+                    HTF_FOLLOW_INFO.snapshotTime != null &&
+                    isFinite(HTF_FOLLOW_INFO.snapshotTime)
+                ) {
+                    maxAllowedTs = HTF_FOLLOW_INFO.snapshotTime;
+                }
+            }
 
+            for (const tr of PHASE3_TRADES) {
+                // Check ob Trade in der Zukunft liegt (relativ zum Snapshot)
+                if (pane === "left" && maxAllowedTs != null) {
+                    let checkTs = null;
+                    if (tr.entryTs != null && Number.isFinite(tr.entryTs)) {
+                        checkTs = tr.entryTs;
+                    } else if (tr.entryWindowEndTs != null && Number.isFinite(tr.entryWindowEndTs)) {
+                        checkTs = tr.entryWindowEndTs;
+                    }
+                    if (checkTs != null && checkTs > maxAllowedTs) {
+                        continue;
+                    }
+                }
+
+                const isBuy = tr.direction === "buy";
                 const hasEntryTs = tr.entryTs != null && Number.isFinite(tr.entryTs);
                 const hasExitTs = tr.exitTs != null && Number.isFinite(tr.exitTs);
                 const isFilled = tr.filled && hasEntryTs && hasExitTs;
                 const isMissed = !tr.filled;
 
-                // Misses optional komplett ausblenden
                 if (!SHOW_MISSES && isMissed) {
                     continue;
                 }
@@ -3614,33 +3639,54 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
 
                     if (posEntry === null || posExit === null) continue;
 
-                    const barEntry = tfData.bars[posEntry];
-                    const barExit  = tfData.bars[posExit];
+                    const idxEntry = tfData.bars[posEntry].i;
+                    const idxExit  = tfData.bars[posExit].i;
 
-                    const idxEntry = barEntry.i;
-                    const idxExit  = barExit.i;
-
-                    let leftIdx  = Math.min(idxEntry, idxExit);
-                    let rightIdx = Math.max(idxEntry, idxExit);
-
-                    // Nur Trades, die das Window berühren
-                    if (rightIdx < minIdx || leftIdx > maxIdx) continue;
+                    // Sichtbarkeits-Check
+                    const minTradeIdx = Math.min(idxEntry, idxExit);
+                    const maxTradeIdx = Math.max(idxEntry, idxExit);
+                    if (maxTradeIdx < minIdx || minTradeIdx > maxIdx) continue;
 
                     let entryPrice = tr.entryPrice;
-                    if (!Number.isFinite(entryPrice)) entryPrice = barEntry.c;
+                    if (!Number.isFinite(entryPrice)) entryPrice = tfData.bars[posEntry].c;
 
                     let exitPrice = tr.exitPrice;
-                    if (!Number.isFinite(exitPrice)) exitPrice = barExit.c;
+                    if (!Number.isFinite(exitPrice)) exitPrice = tfData.bars[posExit].c;
 
                     const slPrice = Number.isFinite(tr.slPrice) ? tr.slPrice : NaN;
                     const tpPrice = Number.isFinite(tr.tpPrice) ? tr.tpPrice : NaN;
+
+                    // -----------------------------------------------------------
+                    // ÄNDERUNG: Offset-Logik für Single-Candle vs Multi-Candle
+                    // -----------------------------------------------------------
+                    const isSingleCandle = (idxEntry === idxExit);
+
+                    let boxXLeft, boxXRight;
+                    let lineXStart, lineXEnd;
+
+                    if (isSingleCandle) {
+                        // Single Candle: Box auf 1.0 Breite aufblasen (-0.5 bis +0.5)
+                        boxXLeft = idxEntry - 0.5;
+                        boxXRight = idxEntry + 0.5;
+                        
+                        // Diagonale auch über die ganze Breite ziehen
+                        lineXStart = idxEntry - 0.5;
+                        lineXEnd = idxEntry + 0.5;
+                    } else {
+                        // Multi Candle: Exakt Mitte zu Mitte (kein Offset)
+                        boxXLeft = Math.min(idxEntry, idxExit);
+                        boxXRight = Math.max(idxEntry, idxExit);
+                        
+                        // Linie exakt von Entry-Index zu Exit-Index
+                        lineXStart = idxEntry;
+                        lineXEnd = idxExit;
+                    }
 
                     // --- SL-Box ---
                     if (!Number.isNaN(slPrice)) {
                         const yLow  = Math.min(entryPrice, slPrice);
                         const yHigh = Math.max(entryPrice, slPrice);
-
-                        const xSl = [leftIdx, rightIdx, rightIdx, leftIdx, leftIdx];
+                        const xSl = [boxXLeft, boxXRight, boxXRight, boxXLeft, boxXLeft];
                         const ySl = [yHigh, yHigh, yLow, yLow, yHigh];
 
                         traces.push({
@@ -3650,10 +3696,8 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                             mode: "lines",
                             line: { width: 0 },
                             fill: "toself",
-                            fillcolor: "rgba(8,153,129,0.15)", // #089981
+                            fillcolor: "rgba(8,153,129,0.15)", 
                             hoverinfo: "skip",
-                            name: "Phase3 SL",
-                            legendgroup: "phase3",
                             showlegend: false
                         });
                     }
@@ -3662,8 +3706,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                     if (!Number.isNaN(tpPrice)) {
                         const yLow  = Math.min(entryPrice, tpPrice);
                         const yHigh = Math.max(entryPrice, tpPrice);
-
-                        const xTp = [leftIdx, rightIdx, rightIdx, leftIdx, leftIdx];
+                        const xTp = [boxXLeft, boxXRight, boxXRight, boxXLeft, boxXLeft];
                         const yTp = [yHigh, yHigh, yLow, yLow, yHigh];
 
                         traces.push({
@@ -3673,10 +3716,8 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                             mode: "lines",
                             line: { width: 0 },
                             fill: "toself",
-                            fillcolor: "rgba(67,70,81,0.15)", // #434651
+                            fillcolor: "rgba(67,70,81,0.15)", 
                             hoverinfo: "skip",
-                            name: "Phase3 TP",
-                            legendgroup: "phase3",
                             showlegend: false
                         });
                     }
@@ -3685,15 +3726,11 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                     if (entryPrice !== exitPrice) {
                         const yLow  = Math.min(entryPrice, exitPrice);
                         const yHigh = Math.max(entryPrice, exitPrice);
+                        const isProfit = isBuy ? (exitPrice > entryPrice) : (exitPrice < entryPrice);
+                        const fillProfit = "rgba(67,70,81,0.15)";  
+                        const fillLoss   = "rgba(8,153,129,0.15)"; 
 
-                        const isProfit = isBuy
-                            ? (exitPrice > entryPrice)
-                            : (exitPrice < entryPrice);
-
-                        const fillProfit = "rgba(67,70,81,0.15)";  // #434651
-                        const fillLoss   = "rgba(8,153,129,0.15)"; // #089981
-
-                        const xPnL = [leftIdx, rightIdx, rightIdx, leftIdx, leftIdx];
+                        const xPnL = [boxXLeft, boxXRight, boxXRight, boxXLeft, boxXLeft];
                         const yPnL = [yHigh, yHigh, yLow, yLow, yHigh];
 
                         traces.push({
@@ -3705,64 +3742,50 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                             fill: "toself",
                             fillcolor: isProfit ? fillProfit : fillLoss,
                             hoverinfo: "skip",
-                            name: "Phase3 PnL",
-                            legendgroup: "phase3",
                             showlegend: false
                         });
                     }
 
                     // --- Diagonale Entry -> Exit ---
-                    const lineColor = "rgba(49,27,146,1.0)";  // #311b92
-
+                    // Nutzt jetzt lineXStart/End, um bei Single-Candle diagonal zu verlaufen
                     traces.push({
                         type: "scatter",
-                        x: [idxEntry, idxExit],
+                        x: [lineXStart, lineXEnd],
                         y: [entryPrice, exitPrice],
                         mode: "lines",
                         line: {
                             width: 1,
-                            color: lineColor,
+                            color: "rgba(49,27,146,1.0)", 
                             dash: "dash"
                         },
                         hoverinfo: "skip",
-                        hovertemplate: null,
-                        name: isBuy ? "Phase3 BUY" : "Phase3 SELL",
-                        legendgroup: "phase3",
                         showlegend: false
                     });
 
-                    continue; // nächster Trade
+                    continue; 
                 }
 
                 // ---------------------------------------------------
                 // FALL B: missed Trade -> nur Positions-Fenster (SL/TP)
                 // ---------------------------------------------------
                 let entryPrice = tr.entryPrice;
-                if (!Number.isFinite(entryPrice)) {
-                    // ohne Entry-Preis macht die Positionsbox keinen Sinn
-                    continue;
-                }
+                if (!Number.isFinite(entryPrice)) continue;
 
                 const slPrice = Number.isFinite(tr.slPrice) ? tr.slPrice : NaN;
                 const tpPrice = Number.isFinite(tr.tpPrice) ? tr.tpPrice : NaN;
 
                 const box = findPhase2BoxForTrade(tr);
-                if (!box || !Number.isFinite(box.signalTs)) {
-                    continue;
-                }
+                if (!box || !Number.isFinite(box.signalTs)) continue;
 
-                // Signalkerze (Ende der Phase2-Box)
                 let posSignal = findPosGEByTs(tfData, box.signalTs);
                 if (posSignal === null) posSignal = findPosLEByTs(tfData, box.signalTs);
                 if (posSignal === null) continue;
 
                 const signalBarIdx = tfData.bars[posSignal].i;
-                let startIdx = signalBarIdx + 1; // mit einer Kerze Abstand
+                let startIdx = signalBarIdx + 1; 
 
-                // Ende: letzte erlaubte Entry-Zeit (z.B. 12:00 NY)
                 let endIdx = null;
                 if (tr.entryWindowEndTs != null && Number.isFinite(tr.entryWindowEndTs)) {
-                    // erste Bar mit ts >= entryWindowEndTs
                     let posFirstAfter = findPosGEByTs(tfData, tr.entryWindowEndTs);
                     if (posFirstAfter !== null) {
                         let posEnd = posFirstAfter - 1;
@@ -3770,29 +3793,32 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                         endIdx = tfData.bars[posEnd].i;
                     }
                 }
-
-                if (endIdx === null) {
-                    endIdx = maxIdx;
-                }
-
+                if (endIdx === null) endIdx = maxIdx;
                 if (endIdx < startIdx) {
-                    const tmp = startIdx;
-                    startIdx = endIdx;
-                    endIdx = tmp;
+                    const tmp = startIdx; startIdx = endIdx; endIdx = tmp;
                 }
 
                 const leftIdx  = Math.max(minIdx, startIdx);
                 const rightIdx = Math.min(maxIdx, endIdx);
-                if (rightIdx < minIdx || leftIdx > maxIdx || rightIdx < leftIdx) {
-                    continue;
+                if (rightIdx < minIdx || leftIdx > maxIdx || rightIdx < leftIdx) continue;
+
+                // -----------------------------------------------------------
+                // ÄNDERUNG: Offset-Logik für Single-Candle Missed Trades
+                // -----------------------------------------------------------
+                let boxXLeft = leftIdx;
+                let boxXRight = rightIdx;
+
+                if (leftIdx === rightIdx) {
+                    // Wenn das Limit-Fenster nur 1 Kerze lang ist (oder durch Zoom so aussieht)
+                    boxXLeft = leftIdx - 0.5;
+                    boxXRight = rightIdx + 0.5;
                 }
 
                 // --- SL-Box (Limitfenster) ---
                 if (!Number.isNaN(slPrice)) {
                     const yLow  = Math.min(entryPrice, slPrice);
                     const yHigh = Math.max(entryPrice, slPrice);
-
-                    const xSl = [leftIdx, rightIdx, rightIdx, leftIdx, leftIdx];
+                    const xSl = [boxXLeft, boxXRight, boxXRight, boxXLeft, boxXLeft];
                     const ySl = [yHigh, yHigh, yLow, yLow, yHigh];
 
                     traces.push({
@@ -3802,10 +3828,8 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                         mode: "lines",
                         line: { width: 0 },
                         fill: "toself",
-                        fillcolor: "rgba(8,153,129,0.15)", // #089981
+                        fillcolor: "rgba(8,153,129,0.15)", 
                         hoverinfo: "skip",
-                        name: isBuy ? "Phase3 BUY (Limit Window SL)" : "Phase3 SELL (Limit Window SL)",
-                        legendgroup: "phase3",
                         showlegend: false
                     });
                 }
@@ -3814,8 +3838,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 if (!Number.isNaN(tpPrice)) {
                     const yLow  = Math.min(entryPrice, tpPrice);
                     const yHigh = Math.max(entryPrice, tpPrice);
-
-                    const xTp = [leftIdx, rightIdx, rightIdx, leftIdx, leftIdx];
+                    const xTp = [boxXLeft, boxXRight, boxXRight, boxXLeft, boxXLeft];
                     const yTp = [yHigh, yHigh, yLow, yLow, yHigh];
 
                     traces.push({
@@ -3825,15 +3848,11 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                         mode: "lines",
                         line: { width: 0 },
                         fill: "toself",
-                        fillcolor: "rgba(67,70,81,0.15)", // #434651
+                        fillcolor: "rgba(67,70,81,0.15)", 
                         hoverinfo: "skip",
-                        name: isBuy ? "Phase3 BUY (Limit Window TP)" : "Phase3 SELL (Limit Window TP)",
-                        legendgroup: "phase3",
                         showlegend: false
                     });
                 }
-
-                // Keine PnL-Box und keine Diagonale bei Misses
             }
 
             return traces;
@@ -3991,7 +4010,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
             const phase2Traces = buildPhase2Traces(tf, tfData, windowBars, windowStart, windowEnd, pane);
 
             // Phase3-Trades
-            const phase3Traces = buildPhase3Traces(tf, tfData, windowBars, windowStart, windowEnd);
+            const phase3Traces = buildPhase3Traces(tf, tfData, windowBars, windowStart, windowEnd, pane);
 
             const allTraces = []
                 .concat(sessionTraces)
