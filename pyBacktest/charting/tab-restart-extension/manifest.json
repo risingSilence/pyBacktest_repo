@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Restart (Duplicate & Close Old)",
+  "version": "1.1",
+  "description": "Dupliziert den aktuellen Tab im Hintergrund, wartet bis der Chart fertig ist, schließt den alten Tab und fokussiert den neuen.",
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "Restart current tab"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

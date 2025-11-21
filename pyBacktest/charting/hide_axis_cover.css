@@ -1,0 +1,5 @@
+/* Achsen-Hover-Labels von Plotly ausblenden, 
+   z.B. das kleine Label auf der X-Achse hinter unserer Box */
+.js-plotly-plot .hoverlayer .axistext {
+    display: none;
+}
