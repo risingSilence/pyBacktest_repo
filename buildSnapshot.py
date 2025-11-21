@@ -3,7 +3,7 @@ import zipfile
 import shutil
 from datetime import datetime
 
-# CONFIG
+# KONFIGURATION
 SOURCE_FOLDER = "pyBacktest"
 GEM_OUTPUT_FOLDER = "pyBacktest_GEM"
 EXTRA_FILE = "buildSnapshot.py"
