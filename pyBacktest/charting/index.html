@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="hide_axis_cover.css" />
     <script src="axis_keyboard.js"></script>
     <script src="crosshair_labels.js"></script>
+    <script src="timeframe_keyboard.js"></script>
 
     <style>
         body {
@@ -617,7 +618,7 @@
                 if (!stateL) {
                     stateL = computeWindowForTf(tfDataL, DEFAULT_VISIBLE_BARS, tfDataL.maxIdx);
                 }
-                const regimeL = getRegime(currentTfLeft);
+                const regimeL = getRegime(currentTfLeft, "left");
                 const regStateL = REGIME_STATE_LEFT[regimeL] || {};
 
                 applyStateAndRenderLeft(currentTfLeft, stateL, {
@@ -804,7 +805,12 @@
             );
         }
 
-        function getRegime(tf) {
+        // NEU: getRegime akzeptiert jetzt 'pane' ("left" oder "right")
+        function getRegime(tf, pane = "right") {
+            // Exception: M15 im HTF (links) -> Hourly Regime
+            if (tf === "M15" && pane === "left") {
+                return "hourly";
+            }
             return REGIME_OF_TF[tf] || "minute";
         }
 
@@ -1619,7 +1625,7 @@
                 ltfSignalIdx
             };
 
-            const regimeLeft = getRegime(tfLeft);
+            const regimeLeft = getRegime(tfLeft, "left");
             const regStateLeft = REGIME_STATE_LEFT[regimeLeft] || {};
 
             // -------------------------------------------------------
@@ -1977,21 +1983,29 @@
             tfSelect.innerHTML = "";
             tfSelectLeft.innerHTML = "";
 
+            // Filter Definitionen
+            const invalidForLtf = ["W", "M"];           // LTF: kein Weekly/Monthly
+            const invalidForHtf = ["M1", "M3", "M5"];   // HTF: nichts unter 15min
+
             // Optionen füllen
             TF_LIST.forEach((tf) => {
-                // rechter Chart (LTF / Main)
-                const optMain = document.createElement("option");
-                optMain.value = tf;
-                optMain.textContent = tf;
-                if (tf === currentTf) optMain.selected = true;
-                tfSelect.appendChild(optMain);
+                // 1. Rechter Chart (LTF / Main)
+                if (!invalidForLtf.includes(tf)) {
+                    const optMain = document.createElement("option");
+                    optMain.value = tf;
+                    optMain.textContent = tf;
+                    if (tf === currentTf) optMain.selected = true;
+                    tfSelect.appendChild(optMain);
+                }
 
-                // linker Chart (HTF)
-                const optLeft = document.createElement("option");
-                optLeft.value = tf;
-                optLeft.textContent = tf;
-                if (tf === currentTfLeft) optLeft.selected = true;
-                tfSelectLeft.appendChild(optLeft);
+                // 2. Linker Chart (HTF)
+                if (!invalidForHtf.includes(tf)) {
+                    const optLeft = document.createElement("option");
+                    optLeft.value = tf;
+                    optLeft.textContent = tf;
+                    if (tf === currentTfLeft) optLeft.selected = true;
+                    tfSelectLeft.appendChild(optLeft);
+                }
             });
 
             // Event: rechter Chart (LTF)
@@ -4212,7 +4226,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 if (!stateL) {
                     stateL = computeWindowForTf(tfDataL, DEFAULT_VISIBLE_BARS, tfDataL.maxIdx);
                 }
-                const regimeL = getRegime(currentTfLeft);
+                const regimeL = getRegime(currentTfLeft, "left");
                 const regStateL = REGIME_STATE_LEFT[regimeL] || {};
 
                 applyStateAndRenderLeft(currentTfLeft, stateL, {
@@ -4482,7 +4496,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 }
             }
 
-            const regimeLeft   = getRegime(tfLeft);
+            const regimeLeft   = getRegime(tfLeft, "left");
             const regStateLeft = REGIME_STATE_LEFT[regimeLeft] || {};
 
             function renderWith(newState) {
@@ -4642,7 +4656,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                     const tfDataL = DATA.timeframes[currentTfLeft];
                     if (tfDataL) {
                         let stateL = TF_STATE_LEFT[currentTfLeft];
-                        const regimeL   = getRegime(currentTfLeft);
+                        const regimeL   = getRegime(currentTfLeft, "left");
                         const regStateL = REGIME_STATE_LEFT[regimeL] || {};
                         if (!stateL) {
                             stateL = computeWindowForTfRightAnchored(tfDataL, DEFAULT_VISIBLE_BARS, tfDataL.maxIdx);
@@ -4783,17 +4797,59 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 console.warn("No data for TF", newTf);
                 return;
             }
-            
-            // ... (Rest der Funktion bleibt exakt gleich) ...
+
+            // Falls nötig den rechten Chart für Phase 2 Referenz nutzen
+            if (!PHASE2_BASE_TF) {
+                getPhase2BaseTfData();
+            }
+
             const regStateOld = REGIME_STATE[oldRegime];
             const regStateNew = REGIME_STATE[newRegime];
+
             if (oldRegime === newRegime) {
                 const timeRange = regStateOld.timeRange;
                 const yRange = regStateOld.yRange;
+                
+                // Basis-Berechnung anhand der Zeit
                 const state = computeWindowFromTimeRangeExact(tfDataNew, timeRange);
+
+                // --- GAP-FIX START ---
+                // Wir übertragen das relative Verhältnis von Gap zu Datenbreite
+                const oldState = TF_STATE[oldTf];
+                if (oldState && oldState.visibleEndIdx != null && oldState.visibleStartIdx != null) {
+                    const oldSpan = oldState.visibleEndIdx - oldState.visibleStartIdx;
+                    const newSpan = state.visibleEndIdx - state.visibleStartIdx;
+
+                    if (oldSpan > 0 && newSpan > 0) {
+                        // 1. Gap Rechts (viewEnd > visibleEnd)
+                        if (oldState.viewEnd != null) {
+                            const oldBarEdgeR = oldState.visibleEndIdx + 0.5;
+                            const oldGapR = oldState.viewEnd - oldBarEdgeR;
+                            // Gap verhältnismäßig übertragen
+                            const ratioR = oldGapR / oldSpan;
+                            const newGapR = newSpan * ratioR;
+                            
+                            state.viewEnd = (state.visibleEndIdx + 0.5) + newGapR;
+                        }
+
+                        // 2. Gap Links (viewStart < visibleStart)
+                        if (oldState.viewStart != null) {
+                            const oldBarEdgeL = oldState.visibleStartIdx - 0.5;
+                            const oldGapL = oldBarEdgeL - oldState.viewStart;
+                            
+                            const ratioL = oldGapL / oldSpan;
+                            const newGapL = newSpan * ratioL;
+
+                            state.viewStart = (state.visibleStartIdx - 0.5) - newGapL;
+                        }
+                    }
+                }
+                // --- GAP-FIX ENDE ---
+
                 applyStateAndRender(newTf, state, { autoY: false, yRangeOverride: yRange });
                 return;
             }
+
             const anchorTime = regStateOld.anchorTime;
             let anchorIdx = null;
             if (anchorTime && tfDataNew.bars && tfDataNew.bars.length) {
@@ -4812,30 +4868,130 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
 
         function onTfChangeLeft(newTf) {
             if (newTf === currentTfLeft) return;
+
+            const wasSnapshotActive = HTF_SNAPSHOT_ACTIVE;
+            const preservedSnapshotInfo = HTF_SNAPSHOT_INFO;
+            const preservedMaxSignalTs = HTF_SNAPSHOT_MAX_SIGNAL_TS;
+
             clearHtfSnapshot();
 
             const oldTf = currentTfLeft;
-            const oldRegime = getRegime(oldTf);
-            const newRegime = getRegime(newTf);
+            // NEU: Pane "left" übergeben!
+            const oldRegime = getRegime(oldTf, "left");
+            const newRegime = getRegime(newTf, "left");
 
             currentTfLeft = newTf;
 
-            const tfDataNew = DATA.timeframes[newTf];
+            let tfDataNew = DATA.timeframes[newTf];
             if (!tfDataNew) {
                 console.warn("No data for TF (left)", newTf);
                 return;
             }
 
-            // ... (Rest der Funktion bleibt exakt gleich) ...
+            const m1Data = DATA.timeframes["M1"];
+            let snapshotRestored = false;
+
+            // --- A) SNAPSHOT RESTORE ---
+            if (wasSnapshotActive && preservedSnapshotInfo && preservedSnapshotInfo.snapshotTime && m1Data) {
+                const snapshot = buildHtfSnapshotData(newTf, tfDataNew, m1Data, preservedSnapshotInfo.snapshotTime);
+                if (snapshot) {
+                    HTF_SNAPSHOT_ACTIVE = true;
+                    HTF_SNAPSHOT_TFDATA = snapshot.htfSnapshotData;
+                    HTF_SNAPSHOT_INFO = {
+                        ...preservedSnapshotInfo,
+                        tf: newTf,
+                        htfBarIndex: snapshot.htfBarIndex
+                    };
+                    HTF_SNAPSHOT_MAX_SIGNAL_TS = preservedMaxSignalTs;
+                    
+                    if (preservedSnapshotInfo.setupId != null && SETUP_BY_ID) {
+                        const setup = SETUP_BY_ID[String(preservedSnapshotInfo.setupId)];
+                        if (setup && setup.boxRef) {
+                            setup.boxRef.isSnapshotActive = true;
+                        }
+                    }
+                    tfDataNew = HTF_SNAPSHOT_TFDATA;
+                    snapshotRestored = true;
+                }
+            }
+
+            // --- B) FOLLOW MODE ---
+            if (!snapshotRestored) {
+                const isFollowMode = (VIEW_MODE === VIEW_MODE_SPLIT && 
+                                     (HTF_BEHAVIOR === HTF_BEHAVIOR_FOLLOW_SNAP || HTF_BEHAVIOR === HTF_BEHAVIOR_FOLLOW_STRICT));
+                
+                if (isFollowMode && TF_STATE[currentTf]) {
+                    const stateRight = TF_STATE[currentTf];
+                    const tfRight = currentTf;
+                    
+                    if (stateRight.visibleEndIdx != null) {
+                        const tfDataRight = DATA.timeframes[tfRight];
+                        if (tfDataRight && m1Data) {
+                            let lastIdx = Math.round(stateRight.visibleEndIdx);
+                            lastIdx = Math.max(tfDataRight.minIdx, Math.min(tfDataRight.maxIdx, lastIdx));
+                            const posRight = lastIdx - tfDataRight.minIdx;
+                            if (posRight >= 0 && posRight < tfDataRight.bars.length) {
+                                const lastBarRight = tfDataRight.bars[posRight];
+                                const ltfDurMs = timeframeToMs(tfRight);
+                                if (lastBarRight && ltfDurMs) {
+                                    const snapshotTime = lastBarRight.ts + ltfDurMs;
+                                    const snapshot = buildHtfSnapshotData(newTf, DATA.timeframes[newTf], m1Data, snapshotTime);
+                                    if (snapshot) {
+                                        HTF_FOLLOW_ACTIVE = true;
+                                        HTF_FOLLOW_TFDATA = snapshot.htfSnapshotData;
+                                        HTF_FOLLOW_INFO = { 
+                                            tf: newTf, 
+                                            snapshotTime: snapshotTime, 
+                                            htfBarIndex: snapshot.htfBarIndex 
+                                        };
+                                        tfDataNew = HTF_FOLLOW_TFDATA;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    HTF_FOLLOW_ACTIVE = false;
+                    HTF_FOLLOW_TFDATA = null;
+                    HTF_FOLLOW_INFO = null;
+                }
+            }
+
             const regStateOld = REGIME_STATE_LEFT[oldRegime];
             const regStateNew = REGIME_STATE_LEFT[newRegime];
+
             if (oldRegime === newRegime) {
                 const timeRange = regStateOld.timeRange;
                 const yRange = regStateOld.yRange;
                 const state = computeWindowFromTimeRangeExact(tfDataNew, timeRange);
+
+                // Gap-Fix
+                const oldState = TF_STATE_LEFT[oldTf];
+                if (oldState && oldState.visibleEndIdx != null && oldState.visibleStartIdx != null) {
+                    const oldSpan = oldState.visibleEndIdx - oldState.visibleStartIdx;
+                    const newSpan = state.visibleEndIdx - state.visibleStartIdx;
+                    if (oldSpan > 0 && newSpan > 0) {
+                        if (oldState.viewEnd != null) {
+                            const oldBarEdgeR = oldState.visibleEndIdx + 0.5;
+                            const oldGapR = oldState.viewEnd - oldBarEdgeR;
+                            const ratioR = oldGapR / oldSpan;
+                            const newGapR = newSpan * ratioR;
+                            state.viewEnd = (state.visibleEndIdx + 0.5) + newGapR;
+                        }
+                        if (oldState.viewStart != null) {
+                            const oldBarEdgeL = oldState.visibleStartIdx - 0.5;
+                            const oldGapL = oldBarEdgeL - oldState.viewStart;
+                            const ratioL = oldGapL / oldSpan;
+                            const newGapL = newSpan * ratioL;
+                            state.viewStart = (state.visibleStartIdx - 0.5) - newGapL;
+                        }
+                    }
+                }
+
                 applyStateAndRenderLeft(newTf, state, { autoY: false, yRangeOverride: yRange });
                 return;
             }
+
             const anchorTime = regStateOld.anchorTime;
             let anchorIdx = null;
             if (anchorTime && tfDataNew.bars && tfDataNew.bars.length) {
@@ -4843,15 +4999,17 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 const pos = findPosLEByTs(tfDataNew, anchorTs);
                 if (pos !== null) anchorIdx = tfDataNew.bars[pos].i;
             }
+            if (anchorIdx === null && tfDataNew.bars.length > 0) {
+                anchorIdx = tfDataNew.maxIdx;
+            }
+
             const visibleBars = regStateNew.visibleBarsHint && regStateNew.visibleBarsHint > 0 ? regStateNew.visibleBarsHint : DEFAULT_VISIBLE_BARS;
             const state = computeWindowForTfRightAnchored(tfDataNew, visibleBars, anchorIdx);
+            
             if (!regStateNew.initialized) {
                 applyStateAndRenderLeft(newTf, state, { autoY: true });
             } else {
                 applyStateAndRenderLeft(newTf, state, { autoY: false, yRangeOverride: regStateNew.yRange });
-            }
-            if (VIEW_MODE === VIEW_MODE_SPLIT && (HTF_BEHAVIOR === HTF_BEHAVIOR_FOLLOW_SNAP || HTF_BEHAVIOR === HTF_BEHAVIOR_FOLLOW_STRICT) && TF_STATE[currentTf]) {
-                updateHtfFollowFromLtf(TF_STATE[currentTf]);
             }
         }
 
@@ -5115,7 +5273,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                             }
                         }
 
-                        const regimeLeft    = getRegime(tfLeft);
+                        const regimeLeft    = getRegime(tf, pane);
                         const regStateLeft  = REGIME_STATE_LEFT[regimeLeft] || {};
 
                         applyStateAndRenderLeft(tfLeft, stateLeft, {
@@ -5447,7 +5605,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                             tfDataL.maxIdx
                         );
                     }
-                    const regimeL   = getRegime(currentTfLeft);
+                    const regimeL   = getRegime(currentTfLeft, "left");
                     const regStateL = REGIME_STATE_LEFT[regimeL] || {};
                     applyStateAndRenderLeft(currentTfLeft, stateL, {
                         autoY: false,
