@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 # ---------------------------------
-# CONFIG
+# CONFIGURATION
 # ---------------------------------
 
 # Ordner, in dem deine M1-CSV-Dateien liegen
