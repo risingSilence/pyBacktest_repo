@@ -30,5 +30,5 @@ backup/
 pyBacktest_GEM/
 **/pyBacktest_GEM/
 
-# Backup-ZIPs werden ignoriert
+# Backup-ZIPs im Hauptordner werden ignoriert
 pyBacktest_*.zip
