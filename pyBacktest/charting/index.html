@@ -4334,7 +4334,11 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 regState.anchorTime = visibleTimeRange[1];
             }
             if (usedYRange) regState.yRange = usedYRange.slice();
+            
             regState.visibleBarsHint = state.visibleBars;
+            // FIX: Save which TF generated this hint to allow scaling later
+            regState.lastTf = tf;
+
             if (autoY && !regState.initialized) regState.initialized = true;
 
             isRelayoutFromCode = true;
@@ -4798,7 +4802,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 return;
             }
 
-            // Falls nötig den rechten Chart für Phase 2 Referenz nutzen
+            // Use right chart for phase 2 reference if needed
             if (!PHASE2_BASE_TF) {
                 getPhase2BaseTfData();
             }
@@ -4810,46 +4814,42 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 const timeRange = regStateOld.timeRange;
                 const yRange = regStateOld.yRange;
                 
-                // Basis-Berechnung anhand der Zeit
+                // Basic calc based on time
                 const state = computeWindowFromTimeRangeExact(tfDataNew, timeRange);
 
                 // --- GAP-FIX START ---
-                // Wir übertragen das relative Verhältnis von Gap zu Datenbreite
                 const oldState = TF_STATE[oldTf];
                 if (oldState && oldState.visibleEndIdx != null && oldState.visibleStartIdx != null) {
                     const oldSpan = oldState.visibleEndIdx - oldState.visibleStartIdx;
                     const newSpan = state.visibleEndIdx - state.visibleStartIdx;
 
                     if (oldSpan > 0 && newSpan > 0) {
-                        // 1. Gap Rechts (viewEnd > visibleEnd)
+                        // 1. Gap Right (viewEnd > visibleEnd)
                         if (oldState.viewEnd != null) {
                             const oldBarEdgeR = oldState.visibleEndIdx + 0.5;
                             const oldGapR = oldState.viewEnd - oldBarEdgeR;
-                            // Gap verhältnismäßig übertragen
                             const ratioR = oldGapR / oldSpan;
                             const newGapR = newSpan * ratioR;
-                            
                             state.viewEnd = (state.visibleEndIdx + 0.5) + newGapR;
                         }
 
-                        // 2. Gap Links (viewStart < visibleStart)
+                        // 2. Gap Left (viewStart < visibleStart)
                         if (oldState.viewStart != null) {
                             const oldBarEdgeL = oldState.visibleStartIdx - 0.5;
                             const oldGapL = oldBarEdgeL - oldState.viewStart;
-                            
                             const ratioL = oldGapL / oldSpan;
                             const newGapL = newSpan * ratioL;
-
                             state.viewStart = (state.visibleStartIdx - 0.5) - newGapL;
                         }
                     }
                 }
-                // --- GAP-FIX ENDE ---
+                // --- GAP-FIX END ---
 
                 applyStateAndRender(newTf, state, { autoY: false, yRangeOverride: yRange });
                 return;
             }
 
+            // REGIME CHANGE LOGIC
             const anchorTime = regStateOld.anchorTime;
             let anchorIdx = null;
             if (anchorTime && tfDataNew.bars && tfDataNew.bars.length) {
@@ -4857,8 +4857,27 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 const pos = findPosLEByTs(tfDataNew, anchorTs);
                 if (pos !== null) anchorIdx = tfDataNew.bars[pos].i;
             }
-            const visibleBars = regStateNew.visibleBarsHint && regStateNew.visibleBarsHint > 0 ? regStateNew.visibleBarsHint : DEFAULT_VISIBLE_BARS;
+
+            // FIX: Scale visibleBars based on TF duration ratio (Time Zoom constancy)
+            let visibleBars = regStateNew.visibleBarsHint && regStateNew.visibleBarsHint > 0 
+                ? regStateNew.visibleBarsHint 
+                : DEFAULT_VISIBLE_BARS;
+
+            const lastTf = regStateNew.lastTf;
+            if (lastTf && lastTf !== newTf) {
+                const minOld = tfToMinutes(lastTf);
+                const minNew = tfToMinutes(newTf);
+                if (minOld && minNew) {
+                    const ratio = minOld / minNew;
+                    visibleBars = Math.round(visibleBars * ratio);
+                    // Safety clamp
+                    if (visibleBars < 10) visibleBars = 10;
+                    console.log(`[TfChange] Scaling bars from ${lastTf} to ${newTf}. Ratio: ${ratio.toFixed(2)}, Bars: ${regStateNew.visibleBarsHint} -> ${visibleBars}`);
+                }
+            }
+
             const state = computeWindowForTfRightAnchored(tfDataNew, visibleBars, anchorIdx);
+            
             if (!regStateNew.initialized) {
                 applyStateAndRender(newTf, state, { autoY: true });
             } else {
@@ -4876,7 +4895,6 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
             clearHtfSnapshot();
 
             const oldTf = currentTfLeft;
-            // NEU: Pane "left" übergeben!
             const oldRegime = getRegime(oldTf, "left");
             const newRegime = getRegime(newTf, "left");
 
@@ -5003,7 +5021,22 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 anchorIdx = tfDataNew.maxIdx;
             }
 
-            const visibleBars = regStateNew.visibleBarsHint && regStateNew.visibleBarsHint > 0 ? regStateNew.visibleBarsHint : DEFAULT_VISIBLE_BARS;
+            // FIX: Scale visibleBars based on TF duration ratio (left pane)
+            let visibleBars = regStateNew.visibleBarsHint && regStateNew.visibleBarsHint > 0 
+                ? regStateNew.visibleBarsHint 
+                : DEFAULT_VISIBLE_BARS;
+
+            const lastTf = regStateNew.lastTf;
+            if (lastTf && lastTf !== newTf) {
+                const minOld = tfToMinutes(lastTf);
+                const minNew = tfToMinutes(newTf);
+                if (minOld && minNew) {
+                    const ratio = minOld / minNew;
+                    visibleBars = Math.round(visibleBars * ratio);
+                    if (visibleBars < 10) visibleBars = 10;
+                }
+            }
+
             const state = computeWindowForTfRightAnchored(tfDataNew, visibleBars, anchorIdx);
             
             if (!regStateNew.initialized) {
