@@ -4372,6 +4372,7 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
         }
 
         // Generischer Reanchor für linken ODER rechten Chart
+        // Generischer Reanchor für linken ODER rechten Chart
         function reanchorChartToRightEdgeForPane(pane, widthFactor) {
             if (!DATA || !DATA.timeframes) return;
 
@@ -4380,6 +4381,15 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
             if (!tfData) return;
 
             let state = pane === "left" ? TF_STATE_LEFT[tf] : TF_STATE[tf];
+
+            // --- GAP FIX START: Bestehende Gap berechnen ---
+            let preserveGap = 0;
+            if (state && state.viewEnd != null && state.visibleEndIdx != null) {
+                // Gap ist Abstand zwischen View-Ende und letzter sichtbarer Kerze
+                preserveGap = state.viewEnd - (state.visibleEndIdx + 0.5);
+            }
+            // -----------------------------------------------
+
             if (!state) {
                 const anchorIdxDefault = tfData.maxIdx;
                 state = computeWindowForTfRightAnchored(
@@ -4397,17 +4407,38 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                 anchorIdx = tfData.maxIdx;
             }
 
+            // --- ZOOM FIX: Anzahl Bars an neue Breite anpassen ---
             let visibleBars = state.visibleBars || DEFAULT_VISIBLE_BARS;
             if (widthFactor && isFinite(widthFactor) && widthFactor > 0) {
+                // Mehr Platz -> Mehr Bars (um Kerzenbreite konstant zu halten)
+                // Weniger Platz -> Weniger Bars
+                const oldBars = visibleBars;
                 visibleBars = Math.round(visibleBars * widthFactor);
                 if (visibleBars < 10) visibleBars = 10;
+                console.log(`[Reanchor] ${pane}: Width x${widthFactor.toFixed(2)} -> Bars ${oldBars} to ${visibleBars}`);
             }
+            // ----------------------------------------------------
 
             const newState = computeWindowForTfRightAnchored(
                 tfData,
                 visibleBars,
                 anchorIdx
             );
+
+            // --- GAP FIX APPLY: Gap wiederherstellen ---
+            if (isFinite(preserveGap)) {
+                // Wir addieren die alte Gap auf das NEUE Daten-Ende
+                newState.viewEnd = (newState.visibleEndIdx + 0.5) + preserveGap;
+
+                // Safety Check: Falls gar nichts mehr zu sehen wäre (ViewEnd <= ViewStart),
+                // erzwingen wir 10% Padding.
+                if (newState.viewEnd <= newState.viewStart) {
+                    const range = Math.max(1, newState.visibleEndIdx - newState.visibleStartIdx);
+                    const safeGap = range * 0.1; 
+                    newState.viewEnd = (newState.visibleEndIdx + 0.5) + safeGap;
+                }
+            }
+            // -------------------------------------------
 
             const regime = getRegime(tf);
             const regStateAll = pane === "left" ? REGIME_STATE_LEFT : REGIME_STATE;
@@ -4766,18 +4797,22 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
                     frac = Math.min(0.9, Math.max(0.1, frac));
                     SPLIT_LEFT_FRACTION = frac;
                 }
+                
+                // WICHTIG: Hier nur reanchor aufrufen, KEIN Plotly.Plots.resize() danach!
+                // reanchor kümmert sich um die Anpassung der visibleBars und das Neuzeichnen (react).
+                
                 if (splitterStartLeftWidth > 0 && leftRect.width > 0) {
                     const factorLeft = leftRect.width / splitterStartLeftWidth;
-                    if (Math.abs(factorLeft - 1) > 0.01) {
+                    // Auch bei kleinen Änderungen triggern, um Zoom-Level konsistent zu halten
+                    if (Math.abs(factorLeft - 1) > 0.001) {
                         reanchorChartToRightEdgeForPane("left", factorLeft);
-                        try { Plotly.Plots.resize("htf-chart"); } catch (e) {}
                     }
                 }
+                
                 if (splitterStartRightWidth > 0 && rightRect.width > 0) {
                     const factorRight = rightRect.width / splitterStartRightWidth;
-                    if (Math.abs(factorRight - 1) > 0.01) {
+                    if (Math.abs(factorRight - 1) > 0.001) {
                         reanchorChartToRightEdgeForPane("right", factorRight);
-                        try { Plotly.Plots.resize("m1-chart"); } catch (e) {}
                     }
                 }
                 savePersistentState();
