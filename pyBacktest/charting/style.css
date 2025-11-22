@@ -1,0 +1,89 @@
+/* --- Aus hide_axis_cover.css: Plotly Achsen-Label ausblenden --- */
+.js-plotly-plot .hoverlayer .axistext {
+    display: none;
+}
+
+/* --- Aus index.html: Allgemeines Layout --- */
+body {
+    margin: 0;
+    padding: 8px;
+    font-family: Arial, sans-serif;
+    background: #ffffff;
+    color: #000;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.toolbar-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.toolbar-section label {
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.tf-select {
+    font-size: 12px;
+    padding: 2px 4px;
+}
+
+.tf-radio-group,
+#axis-mode {
+    font-size: 12px;
+}
+
+#axis-mode label {
+    margin-right: 8px;
+}
+
+#m1-chart, #htf-chart {
+    width: 100%; /* Explizit sicherstellen */
+}
+
+/* Damit lange Dateinamen nicht das Layout sprengen */
+#phase2-file-select, #phase3-file-select {
+    max-width: 300px;
+    text-overflow: ellipsis;
+}
+
+.hint {
+    font-size: 12px;
+    color: #555;
+    margin-bottom: 4px;
+}
+
+/* Splitter-Linie */
+#chart-splitter {
+    position: relative !important;
+    flex: 0 0 3px !important;
+    cursor: col-resize;
+    background: transparent !important;
+    z-index: 10 !important;
+    overflow: visible !important;
+    pointer-events: none !important;
+}
+
+/* Overlay-Dropdowns direkt im Chart */
+.tf-select-overlay {
+    position: absolute;
+    top: 20px;
+    z-index: 50;
+    font-size: 12px;
+    padding: 2px 4px;
+    background-color: rgba(255, 255, 255, 0.85);
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #333;
+}
