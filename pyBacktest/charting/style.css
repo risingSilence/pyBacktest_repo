@@ -76,7 +76,7 @@ body {
 /* Overlay-Dropdowns direkt im Chart */
 .tf-select-overlay {
     position: absolute;
-    top: 20px;
+    top: 25px;
     z-index: 50;
     font-size: 12px;
     padding: 2px 4px;
