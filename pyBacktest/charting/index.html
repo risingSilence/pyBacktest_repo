@@ -72,16 +72,18 @@
         }
 
         #chart-splitter {
-            position: relative;
-            flex: 0 0 3px;        /* Layout-Breite bleibt 3px */
+            position: relative !important;
+            flex: 0 0 3px !important;     /* sichtbare Linie bleibt 3px */
             cursor: col-resize;
-            background: transparent;
-            z-index: 10;          /* WICHTIG: über den Charts liegen */
+            background: transparent !important;
+            z-index: 10 !important;
+            overflow: visible !important;
+            pointer-events: none !important;  /* Splitter selbst ist inert */
         }
 
         /* Unsichtbare, überlappende Hitbox: 18px breit, zentriert */
         #chart-splitter::before {
-            content: "";
+            content: none !important;
             position: absolute;
             top: 0;
             left: 50%;
@@ -4734,90 +4736,237 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
         }
 
         function initSplitterDrag() {
-            // ... (Variablen etc. gleich) ...
             const container = document.getElementById("chart-container");
             const leftWrap  = document.getElementById("left-chart-wrapper");
             const rightWrap = document.getElementById("right-chart-wrapper");
             const splitter  = document.getElementById("chart-splitter");
             if (!container || !leftWrap || !rightWrap || !splitter) return;
 
-            splitter.addEventListener("mousedown", (e) => {
+            // ---- NICHT height anfassen! Nur width fluid machen.
+            const m1El  = document.getElementById("m1-chart");
+            const htfEl = document.getElementById("htf-chart");
+            if (m1El)  m1El.style.width  = "100%";
+            if (htfEl) htfEl.style.width = "100%";
+
+            // ---- echtes Handle bauen (kein ::before mehr)
+            let handle = document.getElementById("chart-splitter-handle");
+            if (!handle) {
+                handle = document.createElement("div");
+                handle.id = "chart-splitter-handle";
+                splitter.appendChild(handle);
+            }
+
+            // Handle inline stylen => unabhängig von CSS
+            Object.assign(handle.style, {
+                position: "absolute",
+                top: "0",
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "14px",
+                height: "100%",
+                cursor: "col-resize",
+                background: "transparent",
+                pointerEvents: "auto",
+                zIndex: 20
+            });
+
+            let dragBase = null;
+            let rafId = null;
+            let pendingWidths = null;
+
+            function getEffectiveTfData(pane, tf) {
+                if (pane === "left") {
+                    if (HTF_SNAPSHOT_ACTIVE && HTF_SNAPSHOT_TFDATA &&
+                        HTF_SNAPSHOT_INFO && HTF_SNAPSHOT_INFO.tf === tf) {
+                        return HTF_SNAPSHOT_TFDATA;
+                    }
+                    if (HTF_FOLLOW_ACTIVE && HTF_FOLLOW_TFDATA &&
+                        HTF_FOLLOW_INFO && HTF_FOLLOW_INFO.tf === tf) {
+                        return HTF_FOLLOW_TFDATA;
+                    }
+                }
+                return DATA.timeframes[tf];
+            }
+
+            function makePaneBase(paneId, tf) {
+                const tfData = getEffectiveTfData(paneId, tf);
+                if (!tfData) return null;
+
+                let state = (paneId === "left") ? TF_STATE_LEFT[tf] : TF_STATE[tf];
+                if (!state) {
+                    state = computeWindowForTfRightAnchored(tfData, DEFAULT_VISIBLE_BARS, tfData.maxIdx);
+                }
+
+                const baseVisibleBars = state.visibleBars || DEFAULT_VISIBLE_BARS;
+
+                let anchorIdx = state.visibleEndIdx;
+                if (anchorIdx == null || !isFinite(anchorIdx)) anchorIdx = tfData.maxIdx;
+
+                // rechte Gap konservieren
+                let gapR = Math.max(1, Math.round(baseVisibleBars * 0.1));
+                if (state.viewEnd != null && state.visibleEndIdx != null) {
+                    const raw = state.viewEnd - (state.visibleEndIdx + 0.5);
+                    if (isFinite(raw) && raw >= 0) gapR = raw;
+                }
+
+                // linke Gap konservieren
+                let gapL = 0;
+                if (state.viewStart != null && state.visibleStartIdx != null) {
+                    const raw = (state.visibleStartIdx - 0.5) - state.viewStart;
+                    if (isFinite(raw) && raw >= 0) gapL = raw;
+                }
+
+                return { paneId, tf, tfData, baseVisibleBars, anchorIdx, gapR, gapL };
+            }
+
+            function liveReanchor(paneBase, widthFactor) {
+                if (!paneBase) return;
+                const { paneId, tf, tfData, baseVisibleBars, anchorIdx, gapR, gapL } = paneBase;
+
+                let visibleBars = Math.round(baseVisibleBars * widthFactor);
+                if (visibleBars < 10) visibleBars = 10;
+
+                const newState = computeWindowForTfRightAnchored(tfData, visibleBars, anchorIdx);
+
+                // Gap wieder anbringen -> Candlebreite bleibt konstant
+                newState.viewEnd   = (newState.visibleEndIdx + 0.5) + gapR;
+                newState.viewStart = (newState.visibleStartIdx - 0.5) - gapL;
+
+                const regime = getRegime(tf, paneId);
+                const regStateAll = (paneId === "left") ? REGIME_STATE_LEFT : REGIME_STATE;
+                const regState = regStateAll[regime] || {};
+
+                if (paneId === "left") {
+                    applyStateAndRenderLeft(tf, newState, {
+                        autoY: false,
+                        yRangeOverride: regState.yRange
+                    });
+                } else {
+                    applyStateAndRender(tf, newState, {
+                        autoY: false,
+                        yRangeOverride: regState.yRange
+                    });
+                }
+            }
+
+            function requestLiveUpdate() {
+                if (rafId != null) return;
+                rafId = requestAnimationFrame(() => {
+                    rafId = null;
+                    if (!dragBase || !pendingWidths) return;
+
+                    const { newLeftPx, newRightPx } = pendingWidths;
+                    pendingWidths = null;
+
+                    // 1) Charts wirklich auf Wrapper-Breite ziehen
+                    try { Plotly.Plots.resize("m1-chart"); } catch (e) {}
+                    if (VIEW_MODE === VIEW_MODE_SPLIT) {
+                        try { Plotly.Plots.resize("htf-chart"); } catch (e) {}
+                    }
+
+                    // 2) Datenfenster croppen/expandieren
+                    const factorLeft  = newLeftPx  / dragBase.leftWidth;
+                    const factorRight = newRightPx / dragBase.rightWidth;
+
+                    liveReanchor(dragBase.leftPane, factorLeft);
+                    liveReanchor(dragBase.rightPane, factorRight);
+                });
+            }
+
+            handle.addEventListener("mousedown", (e) => {
                 if (VIEW_MODE !== VIEW_MODE_SPLIT) return;
                 e.preventDefault();
+                e.stopPropagation(); // Plotly soll hier NICHT starten
+
                 const containerRect = container.getBoundingClientRect();
                 const leftRect      = leftWrap.getBoundingClientRect();
                 const rightRect     = rightWrap.getBoundingClientRect();
                 const splitterRect  = splitter.getBoundingClientRect();
-                splitterContainerWidth = containerRect.width;
+
+                splitterContainerWidth  = containerRect.width;
                 splitterStartLeftWidth  = leftRect.width;
                 splitterStartRightWidth = rightRect.width;
-                splitterWidthPx         = splitterRect.width;
+                splitterWidthPx         = splitterRect.width || 3;
                 splitterStartX          = e.clientX;
-                isSplitterDragging = true;
+                isSplitterDragging      = true;
                 document.body.style.cursor = "col-resize";
+
+                dragBase = {
+                    leftWidth:  splitterStartLeftWidth,
+                    rightWidth: splitterStartRightWidth,
+                    leftPane:   makePaneBase("left", currentTfLeft),
+                    rightPane:  makePaneBase("right", currentTf),
+                };
+
+                pendingWidths = { newLeftPx: splitterStartLeftWidth, newRightPx: splitterStartRightWidth };
+                requestLiveUpdate();
             });
 
             window.addEventListener("mousemove", (e) => {
-                if (!isSplitterDragging) return;
+                if (!isSplitterDragging || VIEW_MODE !== VIEW_MODE_SPLIT) return;
+
                 const delta = e.clientX - splitterStartX;
                 const minWidth = 80;
+
                 let newLeft = splitterStartLeftWidth + delta;
                 const maxLeft = splitterContainerWidth - splitterWidthPx - minWidth;
                 if (newLeft < minWidth) newLeft = minWidth;
                 if (newLeft > maxLeft)  newLeft = maxLeft;
+
                 const newRight = splitterContainerWidth - splitterWidthPx - newLeft;
+
                 leftWrap.style.flex  = `0 0 ${newLeft}px`;
                 rightWrap.style.flex = `0 0 ${newRight}px`;
 
-                try {
-                    Plotly.Plots.resize("m1-chart");
-                } catch (err) {
-                    console.warn("Plotly resize m1-chart failed:", err);
-                }
-                try {
-                    if (VIEW_MODE === VIEW_MODE_SPLIT) {
-                        Plotly.Plots.resize("htf-chart");
-                    }
-                } catch (err) {
-                    console.warn("Plotly resize htf-chart failed:", err);
-                }
+                pendingWidths = { newLeftPx: newLeft, newRightPx: newRight };
+                requestLiveUpdate();
             });
 
             window.addEventListener("mouseup", () => {
                 if (!isSplitterDragging) return;
                 isSplitterDragging = false;
                 document.body.style.cursor = "";
+
+                if (!dragBase) return;
+
                 const leftRect  = leftWrap.getBoundingClientRect();
                 const rightRect = rightWrap.getBoundingClientRect();
                 const containerRect = container.getBoundingClientRect();
-                const totalWidth = containerRect.width;
+
+                const totalWidth  = containerRect.width;
                 const usableWidth = Math.max(1, totalWidth - splitterWidthPx);
+
                 if (usableWidth > 0) {
                     let frac = leftRect.width / usableWidth;
                     frac = Math.min(0.9, Math.max(0.1, frac));
                     SPLIT_LEFT_FRACTION = frac;
                 }
-                
-                // WICHTIG: Hier nur reanchor aufrufen, KEIN Plotly.Plots.resize() danach!
-                // reanchor kümmert sich um die Anpassung der visibleBars und das Neuzeichnen (react).
-                
-                if (splitterStartLeftWidth > 0 && leftRect.width > 0) {
-                    const factorLeft = leftRect.width / splitterStartLeftWidth;
-                    // Auch bei kleinen Änderungen triggern, um Zoom-Level konsistent zu halten
-                    if (Math.abs(factorLeft - 1) > 0.001) {
-                        reanchorChartToRightEdgeForPane("left", factorLeft);
-                    }
+
+                // finaler resize + finaler reanchor
+                try { Plotly.Plots.resize("m1-chart"); } catch (e) {}
+                if (VIEW_MODE === VIEW_MODE_SPLIT) {
+                    try { Plotly.Plots.resize("htf-chart"); } catch (e) {}
                 }
-                
-                if (splitterStartRightWidth > 0 && rightRect.width > 0) {
-                    const factorRight = rightRect.width / splitterStartRightWidth;
-                    if (Math.abs(factorRight - 1) > 0.001) {
-                        reanchorChartToRightEdgeForPane("right", factorRight);
-                    }
+
+                const factorLeft  = leftRect.width  / dragBase.leftWidth;
+                const factorRight = rightRect.width / dragBase.rightWidth;
+                liveReanchor(dragBase.leftPane, factorLeft);
+                liveReanchor(dragBase.rightPane, factorRight);
+
+                dragBase = null;
+                pendingWidths = null;
+
+                if (rafId != null) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
                 }
+
                 savePersistentState();
             });
         }
+
+
+
 
         // -----------------------------------------------------------
         // 7) Timeframe-Wechsel
