@@ -13,17 +13,16 @@ pyBacktest/dukascopy_m1/
 pyBacktest/charting/data.json
 pyBacktest/charting/*_raw_for_json.csv
 
-# --- Backtest Daten Filter ---
-# Alle Signal-Dateien ignorieren
-pyBacktest/charting/data/*_signals_*.csv
-
-# Alle phase0a/b/1 Dateien filtern
-pyBacktest/data/*.csv
-
 # --- Backup Ordner (Global) ---
 # Ignoriert JEDEN Ordner namens "backup", egal wo er liegt (Unterordner etc.)
 backup/
 **/backup/
+
+data/
+**/data/
+
+venv/
+**/venv/
 
 # --- pyBacktest_GEM Ordner (Global) ---
 # Ignoriert JEDEN Ordner namens "pyBacktest_GEM", egal wo er liegt (Unterordner etc.)

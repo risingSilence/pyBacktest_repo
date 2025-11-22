@@ -11,7 +11,7 @@ from datetime import datetime
 SYMBOL = "EURUSD"
 
 # Zeitraum für die Berechnung (Filter)
-START_DATE_NY = datetime(2025, 10, 1)
+START_DATE_NY = datetime(2023, 1, 1)
 END_DATE_NY   = datetime(2025, 11, 8)
 
 DATA_DIR = "data"
