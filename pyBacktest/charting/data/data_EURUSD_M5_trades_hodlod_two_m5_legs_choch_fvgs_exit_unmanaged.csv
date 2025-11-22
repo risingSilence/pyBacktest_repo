@@ -1,7 +1,7 @@
-symbol,date_ny,direction,scenario_id,exit_mode,setup_index,filled,miss_reason,entry_idx,exit_idx,entry_price,sl_price,tp_price,exit_price,exit_reason,result_R,sl_size_pips,holding_minutes
-EURUSD,2025-10-17,buy,limit_fvg2_london_2R,exit_unmanaged,0,True,,2025-10-17 09:25:00,2025-10-17 10:00:00,1.16777,1.1666,1.17011,1.1666,SL,-1.0,11.7,35.0
-EURUSD,2025-10-22,buy,limit_fvg2_london_2R,exit_unmanaged,1,False,no_fill_until_noon,,,1.15882,1.15759,1.16127,,,,,
-EURUSD,2025-10-28,buy,limit_fvg2_london_2R,exit_unmanaged,2,False,no_fill_until_noon,,,1.16381,1.16248,1.16648,,,,,
-EURUSD,2025-11-03,buy,limit_fvg2_london_2R,exit_unmanaged,3,True,,2025-11-03 10:20:00,2025-11-03 12:25:00,1.15159,1.15042,1.15393,1.15351,TRAILING_STOP_NEAR_TP,1.64,11.7,125.0
-EURUSD,2025-11-06,sell,limit_fvg2_london_2R,exit_unmanaged,4,True,,2025-11-06 10:15:00,2025-11-06 13:10:00,1.1532,1.15446,1.15068,1.15446,SL,-1.0,12.6,175.0
-EURUSD,2025-11-07,sell,limit_fvg2_london_2R,exit_unmanaged,5,True,,2025-11-07 11:05:00,2025-11-07 16:55:00,1.15766,1.15918,1.15462,1.15656,MANUAL_CLOSE,0.72,15.2,350.0
+symbol,date_ny,direction,scenario_id,exit_mode,setup_index,filled,miss_reason,entry_time,exit_time,expiration_time,entry_price,sl_price,tp_price,exit_price,exit_reason,result_R,sl_size_pips,holding_minutes
+EURUSD,2025-10-17,buy,limit_fvg2_london_2R,exit_unmanaged,0,True,,2025-10-17 09:25:00,2025-10-17 10:00:00,2025-10-17 12:00:00,1.16777,1.1666,1.17011,1.1666,SL,-1.0,11.7,35.0
+EURUSD,2025-10-22,buy,limit_fvg2_london_2R,exit_unmanaged,1,False,no_fill_until_noon,,,2025-10-22 12:00:00,1.15882,1.15759,1.16127,,,,,
+EURUSD,2025-10-28,buy,limit_fvg2_london_2R,exit_unmanaged,2,False,no_fill_until_noon,,,2025-10-28 12:00:00,1.16381,1.16248,1.16648,,,,,
+EURUSD,2025-11-03,buy,limit_fvg2_london_2R,exit_unmanaged,3,True,,2025-11-03 10:20:00,2025-11-03 12:25:00,2025-11-03 12:00:00,1.15159,1.15042,1.15393,1.15351,TRAILING_STOP_NEAR_TP,1.64,11.7,125.0
+EURUSD,2025-11-06,sell,limit_fvg2_london_2R,exit_unmanaged,4,True,,2025-11-06 10:15:00,2025-11-06 13:10:00,2025-11-06 12:00:00,1.1532,1.15446,1.15068,1.15446,SL,-1.0,12.6,175.0
+EURUSD,2025-11-07,sell,limit_fvg2_london_2R,exit_unmanaged,5,True,,2025-11-07 11:05:00,2025-11-07 16:55:00,2025-11-07 12:00:00,1.15766,1.15918,1.15462,1.15656,MANUAL_CLOSE,0.72,15.2,350.0

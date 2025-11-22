@@ -68,33 +68,15 @@ function parseCsvToObjects(text) {
 }
 
 function updatePhase2SignalBaseFromFilename(filename) {
+    // Wir deaktivieren die automatische Ermittlung aus dem Dateinamen,
+    // da die CSV jetzt exakte "Close"-Zeitstempel (signal_end_time) liefert.
+    // PHASE2_SIGNAL_BASE_MINUTES = 0 sorgt dafür, dass im UI-Controller
+    // nichts mehr auf den End-Zeitstempel addiert wird.
     PHASE2_SIGNAL_BASE_TF = null;
-    PHASE2_SIGNAL_BASE_MINUTES = 5;
+    PHASE2_SIGNAL_BASE_MINUTES = 0; 
     PHASE2_BASE_TF = null;
 
-    if (!filename) return;
-    const lower = filename.toUpperCase();
-    let detectedTf = null;
-
-    for (const tf of TF_LIST) {
-        const token = "_" + tf.toUpperCase() + "_";
-        if (lower.includes(token)) {
-            detectedTf = tf;
-            break;
-        }
-    }
-
-    if (!detectedTf) {
-        console.warn("[Phase2] Could not derive TF from filename:", filename);
-        return;
-    }
-
-    PHASE2_SIGNAL_BASE_TF = detectedTf;
-    const mins = tfToMinutes(detectedTf);
-    if (mins != null) {
-        PHASE2_SIGNAL_BASE_MINUTES = mins;
-    }
-    console.log("[Phase2] Signal-Base-TF:", PHASE2_SIGNAL_BASE_TF, "(", mins, "min)");
+    console.log("[Phase2] Signal-Base set to exact/0 min (Reading explicit timestamps from CSV)");
 }
 
 function getPhase2BaseTfData() {
@@ -134,25 +116,42 @@ function buildPhase2BoxesFromRows(rows) {
     rows.forEach((row, rowIndex) => {
         const direction = (row["direction"] || "").toLowerCase();
         const dateNy = row["date_ny"] || row["date"] || "";
-        const hod_time = parseNyStringToMs(row["hod_time"]);
-        const ll2_time = parseNyStringToMs(row["ll2_time"]);
-        const lod_time = parseNyStringToMs(row["lod_time"]);
-        const hh2_time = parseNyStringToMs(row["hh2_time"]);
+        const signalTf = row["signal_tf"] || ""; // Info-Feld, falls benötigt
 
-        let topTs = NaN, bottomTs = NaN, signalTs = NaN;
+        // Generische Spalten direkt auslesen (Erwartet: ISO Strings)
+        const startRaw = row["signal_start_time"];
+        const endRaw   = row["signal_end_time"];
 
-        if (direction === "sell" && !Number.isNaN(hod_time) && !Number.isNaN(ll2_time)) {
-            topTs = hod_time; bottomTs = ll2_time; signalTs = ll2_time;
-        } else if (direction === "buy" && !Number.isNaN(lod_time) && !Number.isNaN(hh2_time)) {
-            topTs = hh2_time; bottomTs = lod_time; signalTs = hh2_time;
-        } else {
+        const startMs = parseNyStringToMs(startRaw);
+        const endMs   = parseNyStringToMs(endRaw);
+
+        // Validierung
+        if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+            // Falls alte CSVs geladen werden, könnte man hier Fallbacks einbauen,
+            // aber wir erzwingen jetzt die neuen Spalten.
             return;
         }
 
+        // Mapping auf internes Format:
+        // topTs    = Startzeitpunkt der Box (z.B. HOD Time)
+        // bottomTs = Endzeitpunkt der Box (z.B. Signal Close Time)
+        // signalTs = Endzeitpunkt (wichtig für Sync/Sortierung)
+        const topTs = startMs;
+        const bottomTs = endMs;
+        const signalTs = endMs;
+
         boxes.push({
-            direction, topTs, bottomTs, signalTs, dateNy, setupIndex: rowIndex
+            direction, 
+            topTs, 
+            bottomTs, 
+            signalTs, 
+            dateNy, 
+            setupIndex: rowIndex,
+            signalTf
         });
     });
+
+    // Sortieren nach Startzeit
     boxes.sort((a, b) => a.topTs - b.topTs);
     return boxes;
 }
@@ -175,8 +174,17 @@ function buildPhase3TradesFromRows(rows) {
             if (!Number.isNaN(tmp)) setupIndex = tmp;
         }
 
-        const entryTsRaw = parseNyStringToMs(row["entry_idx"]);
-        const exitTsRaw = parseNyStringToMs(row["exit_idx"]);
+        // NEU: Generalisierte Zeit-Spalten (mit Fallback auf alte Namen)
+        const entryRaw = row["entry_time"] || row["entry_idx"];
+        const exitRaw  = row["exit_time"]  || row["exit_idx"];
+        const expRaw   = row["expiration_time"];
+
+        const entryTsRaw = parseNyStringToMs(entryRaw);
+        const exitTsRaw  = parseNyStringToMs(exitRaw);
+        
+        // NEU: Expiration Time direkt aus CSV lesen (kein 12:00 Hardcode mehr!)
+        const expirationTs = parseNyStringToMs(expRaw);
+
         const hasEntryTs = !Number.isNaN(entryTsRaw);
         const hasExitTs = !Number.isNaN(exitTsRaw);
 
@@ -193,19 +201,16 @@ function buildPhase3TradesFromRows(rows) {
 
         if (filled && (!hasEntryTs || !hasExitTs)) continue;
 
-        let entryWindowEndTs = null;
-        if (dateNy) {
-            const ts = parseNyStringToMs(`${dateNy} 12:00:00`);
-            if (!Number.isNaN(ts)) entryWindowEndTs = ts;
-        }
-
         trades.push({
             direction, symbol, dateNy, scenarioId, exitMode, missReason,
             setupIndex: Number.isNaN(setupIndex) ? null : setupIndex,
             filled,
             entryTs: hasEntryTs ? entryTsRaw : null,
             exitTs: hasExitTs ? exitTsRaw : null,
-            entryWindowEndTs,
+            
+            // NEU: Wir speichern jetzt expirationTs statt entryWindowEndTs
+            expirationTs: Number.isNaN(expirationTs) ? null : expirationTs,
+            
             entryPrice: Number.isNaN(entryPrice) ? NaN : entryPrice,
             slPrice: Number.isNaN(slPrice) ? NaN : slPrice,
             tpPrice: Number.isNaN(tpPrice) ? NaN : tpPrice,
@@ -214,8 +219,9 @@ function buildPhase3TradesFromRows(rows) {
         });
     }
     trades.sort((a, b) => {
-        const ta = (a.entryTs != null ? a.entryTs : a.entryWindowEndTs) ?? 0;
-        const tb = (b.entryTs != null ? b.entryTs : b.entryWindowEndTs) ?? 0;
+        // Sortierung überarbeitet: Entry oder Expiration
+        const ta = (a.entryTs != null ? a.entryTs : a.expirationTs) ?? 0;
+        const tb = (b.entryTs != null ? b.entryTs : b.expirationTs) ?? 0;
         return ta - tb;
     });
     return trades;

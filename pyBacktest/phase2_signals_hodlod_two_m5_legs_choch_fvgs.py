@@ -12,6 +12,10 @@ SYMBOL = "EURUSD"
 # Setup-Name für Dateinamen (damit man im Frontend weiß, was es ist)
 SETUP_NAME = "hodlod_two_m5_legs_choch_fvgs"
 
+# TIME FRAME KONFIGURATION (NEU)
+SETUP_TF = "M5"              # Der Timeframe, auf dem wir suchen
+SETUP_TF_MINUTES = 5         # Dauer einer Kerze in Minuten (für End-Zeit-Berechnung)
+
 # Pfade definieren
 BASE_DATA_DIR = "data"             # Hier liegt der Phase 1 Output
 CHART_DATA_DIR = "charting/data"   # Hierhin schreiben wir für die HTML
@@ -21,12 +25,10 @@ INPUT_FILENAME = f"data_{SYMBOL}_M5_phase1_structure.csv"
 INPUT_FILE = os.path.join(BASE_DATA_DIR, INPUT_FILENAME)
 
 # Output 1: Die Bars mit den Signalen (für Phase 3 und Visualisierung)
-# Format: data_{SYMBOL}_{TF}_signals_{SETUP_NAME}.csv
 OUTPUT_BARS_FILENAME = f"data_{SYMBOL}_M5_signals_{SETUP_NAME}.csv"
 OUTPUT_BARS_FILE = os.path.join(CHART_DATA_DIR, OUTPUT_BARS_FILENAME)
 
 # Output 2: Die Setups/Boxen (für Phase 3 und Visualisierung)
-# Format: data_{SYMBOL}_{TF}_setups_{SETUP_NAME}.csv
 OUTPUT_SETUPS_FILENAME = f"data_{SYMBOL}_M5_setups_{SETUP_NAME}.csv"
 OUTPUT_SETUPS_FILE = os.path.join(CHART_DATA_DIR, OUTPUT_SETUPS_FILENAME)
 
@@ -36,7 +38,6 @@ PIP_SIZE_MAP = {
     "EURUSD": 0.0001,
     "GBPUSD": 0.0001,
 }
-# ... (Rest der Config Parameter bleiben gleich)
 
 CHOCH_PIPS = {
     "AUDUSD": 1.0,
@@ -161,36 +162,7 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                             lows,
                             pip_size: float):
     """
-    SELL-Setup (HOD-Seite):
-
-    - Anker-HH:
-        Laufendes Day-High + HH im Zeitfenster 08:30–11:00 NY
-        (swing_high_label == "HH" und is_day_high_bar == True).
-        Jeder neue gültige HH im Fenster ersetzt den Anker.
-
-    - 1st Leg: HH -> LL1
-        LL1 = erstes Swing-LL (swing_low_label == "LL") nach dem Anker-HH.
-
-    - CHOCH:
-        Sobald nach LL1 eine Kerze mit
-            close <= LL1_low - CHOCH_PIPS[symbol] * pip_size
-        schließt (vor 11:30 NY), gilt CHOCH als passiert.
-
-    - 2nd Leg: LL1 -> (Signal-Bar)
-        Nach CHOCH wird bei JEDER weiteren Candle bis max. zum
-        ersten strukturellen 2. LL geprüft:
-
-        * Range(HH_high -> current_low) >= MIN_RANGE[symbol]
-        * Bear-FVGs in Leg1 (HH->LL1) und Leg2 (LL1->current):
-              Summe >= MIN_FVG_SUM[symbol]
-              pro Leg max(FVG) >= MIN_SINGLE_FVG[symbol]
-        * London-Low an current-Bar noch NICHT gebrochen.
-
-        Die erste Candle, bei der alle Bedingungen erfüllt sind,
-        wird als ll2_idx/ll2_row genommen (auch ohne LL-Label).
-
-        Wenn bis zum ersten Swing-LL nach CHOCH kein gültiger
-        Kandidat gefunden wird, gibt es KEIN Setup.
+    SELL-Setup (HOD-Seite) mit expliziter Signal-Start/End-Berechnung.
     """
 
     choch_pips = CHOCH_PIPS[symbol]
@@ -320,10 +292,22 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
     sizes_leg2 = _scan_bear_fvgs_for_leg(highs, lows, pos_ll1, pos_ll2, pip_size)
     sum_fvg = sum(sizes_leg1) + sum(sizes_leg2)
 
+    # --- NEU: End-Time berechnen ---
+    # ll2_idx ist die Open-Time der Signal-Kerze.
+    # Wir addieren die Timeframe-Dauer, um die Close-Time (Signal-Manifestierung) zu erhalten.
+    signal_end_ts = pd.Timestamp(ll2_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
+
     return {
         "direction": "sell",
         "symbol": symbol,
         "date_ny": df_day["date_ny"].iloc[0],
+        
+        # --- GENERISCHE SPALTEN ---
+        "signal_tf": SETUP_TF,
+        "signal_start_time": anchor_hh_idx,  # Start (HOD Open Time)
+        "signal_end_time": signal_end_ts,    # End (LL2 Close Time)
+
+        # --- ALTE SPALTEN ---
         "hod_idx": anchor_hh_idx,
         "ll1_idx": ll1_idx,
         "ll2_idx": ll2_idx,
@@ -340,9 +324,6 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
     }
 
 
-
-
-
 # ---------------------------------
 # BUY-Setup: LOD (LL) -> HH1 -> HH2
 # ---------------------------------
@@ -355,36 +336,7 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
                            lows,
                            pip_size: float):
     """
-    BUY-Setup (LOD-Seite, gespiegelt):
-
-    - Anker-LL:
-        Laufendes Day-Low + LL im Zeitfenster 08:30–11:00 NY
-        (swing_low_label == "LL" und is_day_low_bar == True).
-        Jeder neue gültige LL im Fenster ersetzt den Anker.
-
-    - 1st Leg: LL -> HH1
-        HH1 = erstes Swing-HH (swing_high_label == "HH") nach dem Anker-LL.
-
-    - CHOCH:
-        Sobald nach HH1 eine Kerze mit
-            close >= HH1_high + CHOCH_PIPS[symbol] * pip_size
-        schließt (vor 11:30 NY), gilt CHOCH als passiert.
-
-    - 2nd Leg: HH1 -> (Signal-Bar)
-        Nach CHOCH wird bei JEDER weiteren Candle bis max. zum
-        ersten strukturellen 2. HH geprüft:
-
-        * Range(LL_low -> current_high) >= MIN_RANGE[symbol]
-        * Bull-FVGs in Leg1 (LL->HH1) und Leg2 (HH1->current):
-              Summe >= MIN_FVG_SUM[symbol]
-              pro Leg max(FVG) >= MIN_SINGLE_FVG[symbol]
-        * London-High an current-Bar noch NICHT gebrochen.
-
-        Die erste Candle, bei der alle Bedingungen erfüllt sind,
-        wird als hh2_idx/hh2_row genommen (auch ohne HH-Label).
-
-        Wenn bis zum ersten Swing-HH nach CHOCH kein gültiger
-        Kandidat gefunden wird, gibt es KEIN Setup.
+    BUY-Setup (LOD-Seite, gespiegelt).
     """
 
     choch_pips = CHOCH_PIPS[symbol]
@@ -510,10 +462,22 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
     sizes_leg2 = _scan_bull_fvgs_for_leg(highs, lows, pos_hh1, pos_hh2, pip_size)
     sum_fvg = sum(sizes_leg1) + sum(sizes_leg2)
 
+    # --- NEU: End-Time berechnen ---
+    # hh2_idx ist die Open-Time der Signal-Kerze.
+    # Wir addieren die Timeframe-Dauer, um die Close-Time (Signal-Manifestierung) zu erhalten.
+    signal_end_ts = pd.Timestamp(hh2_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
+
     return {
         "direction": "buy",
         "symbol": symbol,
         "date_ny": df_day["date_ny"].iloc[0],
+        
+        # --- GENERISCHE SPALTEN ---
+        "signal_tf": SETUP_TF,
+        "signal_start_time": anchor_ll_idx, # Start (LOD Open Time)
+        "signal_end_time": signal_end_ts,   # End (HH2 Close Time)
+
+        # --- ALTE SPALTEN ---
         "lod_idx": anchor_ll_idx,
         "hh1_idx": hh1_idx,
         "hh2_idx": hh2_idx,
@@ -528,8 +492,6 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
         "fvg_max_leg1": max(sizes_leg1) if sizes_leg1 else 0.0,
         "fvg_max_leg2": max(sizes_leg2) if sizes_leg2 else 0.0,
     }
-
-
 
 
 

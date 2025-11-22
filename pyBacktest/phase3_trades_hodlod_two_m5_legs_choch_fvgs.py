@@ -908,7 +908,6 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
     stats["avg_holding_minutes_losers"] = float(hold_l.mean()) if len(hold_l) > 0 else np.nan
 
     # SL- und TP-Zeiten
-    # SL schließt hier auch Trailing-Stops ein (inkl. Near-TP-Trailing)
     sl_trades = df_filled[df_filled["exit_reason"].isin(
         ["SL", "TRAILING_STOP", "TRAILING_STOP_NEAR_TP"]
     )]
@@ -918,8 +917,13 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
     stats["avg_tp_minutes"] = float(tp_trades["holding_minutes"].astype(float).mean()) if not tp_trades.empty else np.nan
 
     # Streaks
-    # Wir sortieren nach entry_idx
-    df_sorted = df_filled.sort_values("entry_idx")
+    # Wir sortieren nach entry_time (neu) oder entry_idx (alt, fallback)
+    sort_col = "entry_time" if "entry_time" in df_filled.columns else "entry_idx"
+    if sort_col in df_filled.columns:
+        df_sorted = df_filled.sort_values(sort_col)
+    else:
+        df_sorted = df_filled # Fallback unsortiert
+
     res_sorted = df_sorted["result_R"].astype(float)
 
     max_win_streak = 0
@@ -935,7 +939,6 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
             cur_loss += 1
             cur_win = 0
         else:
-            # R == 0 -> streaks resetten
             cur_win = 0
             cur_loss = 0
         max_win_streak = max(max_win_streak, cur_win)
@@ -944,7 +947,7 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
     stats["max_win_streak"] = int(max_win_streak)
     stats["max_loss_streak"] = int(max_loss_streak)
 
-    # Equity-Kurve und Drawdown (Start bei 0 für korrekten Max-DD)
+    # Equity-Kurve und Drawdown
     equity = res_sorted.cumsum()
     equity_with_zero = pd.concat([pd.Series([0.0]), equity], ignore_index=True)
     running_max = equity_with_zero.cummax()
@@ -953,7 +956,7 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
     stats["max_drawdown_R"] = float(drawdowns.max())
     stats["avg_drawdown_R"] = float(drawdowns.mean())
 
-    # Formattierte Zeiten (hh:mm) zusätzlich speichern
+    # Formattierte Zeiten (hh:mm)
     stats["avg_holding_hhmm"] = _format_minutes_to_hhmm(stats["avg_holding_minutes"])
     stats["avg_holding_hhmm_winners"] = _format_minutes_to_hhmm(stats["avg_holding_minutes_winners"])
     stats["avg_holding_hhmm_losers"] = _format_minutes_to_hhmm(stats["avg_holding_minutes_losers"])
@@ -965,7 +968,6 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
 
 
 
-
 # ---------------------------------
 # MAIN
 # ---------------------------------
@@ -973,7 +975,7 @@ def compute_stats(df_trades: pd.DataFrame) -> Dict[str, Any]:
 def main():
     print(f"Running phase3 backtest for {SYMBOL} / scenario {SCENARIO_ID} ...")
 
-    # Bars laden (ALLE Tage)
+    # Bars laden
     print(f"Loading bars from {INPUT_BARS_FILE} ...")
     df_bars = pd.read_csv(INPUT_BARS_FILE)
     df_bars = _ensure_time_columns(df_bars)
@@ -1001,17 +1003,21 @@ def main():
             direction = setup["direction"]
             date_ny = setup["date_ny"]
 
-            # Tages-Bars für Entry-Logik (London-Range etc.)
+            # Tages-Bars
             df_day = df_bars[df_bars["date_ny"] == date_ny].copy()
             if df_day.empty:
                 print(f"[INFO] No bars for date {date_ny}, skipping setup {i}.")
                 continue
 
-            # Entry wird auf Basis des Tages gebaut
+            # Expiration Time berechnen (für Visualisierung von Missed Trades)
+            # Hier: 12:00 NY (NY_ENTRY_CUTOFF_MINUTE)
+            ex_h = NY_ENTRY_CUTOFF_MINUTE // 60
+            ex_m = NY_ENTRY_CUTOFF_MINUTE % 60
+            expiration_str = f"{date_ny} {ex_h:02d}:{ex_m:02d}:00"
+
+            # Entry bauen
             entry_spec = build_entry_for_setup_scenario1(setup, df_day, setup_idx=i)
             if entry_spec is None:
-                # Kein Entry in diesem Szenario -> echte "no_entry_for_scenario"-Miss,
-                # hier gibt es auch keine sinnvollen Preise für SL/TP/Entry
                 trades_rows.append({
                     "symbol": setup["symbol"],
                     "date_ny": date_ny,
@@ -1021,33 +1027,23 @@ def main():
                     "setup_index": i,
                     "filled": False,
                     "miss_reason": "no_entry_for_scenario",
-                    "entry_idx": None,
-                    "exit_idx": None,
-                    "entry_price": None,
-                    "sl_price": None,
-                    "tp_price": None,
-                    "exit_price": None,
-                    "exit_reason": None,
-                    "result_R": None,
-                    "sl_size_pips": None,
-                    "holding_minutes": None,
+                    
+                    "entry_time": None, "exit_time": None, # Renamed
+                    "expiration_time": expiration_str,     # NEU
+                    
+                    "entry_price": None, "sl_price": None, "tp_price": None,
+                    "exit_price": None, "exit_reason": None,
+                    "result_R": None, "sl_size_pips": None, "holding_minutes": None,
                 })
                 continue
 
-            # Für Exit-Modi, die über den Tag hinauslaufen dürfen,
-            # verwenden wir den GESAMTEN Datensatz (df_bars),
-            # sonst nur den Tagesdatensatz (df_day).
-            if exit_mode in ("exit_unmanaged",
-                             "exit_post_2pm_1st_bos",
-                             "exit_post_2pm_2nd_bos"):
+            if exit_mode in ("exit_unmanaged", "exit_post_2pm_1st_bos", "exit_post_2pm_2nd_bos"):
                 df_for_exit = df_bars
             else:
                 df_for_exit = df_day
 
             exit_res = simulate_trade_for_exit_mode(entry_spec, df_for_exit, exit_mode=exit_mode)
 
-            # WICHTIG: Entry/SL/TP IMMER schreiben, sobald entry_spec existiert,
-            # auch wenn filled == False (z.B. no_fill_until_noon)
             trades_rows.append({
                 "symbol": entry_spec.symbol,
                 "date_ny": entry_spec.date_ny,
@@ -1057,8 +1053,12 @@ def main():
                 "setup_index": entry_spec.setup_index,
                 "filled": exit_res.filled,
                 "miss_reason": exit_res.miss_reason,
-                "entry_idx": exit_res.entry_idx,
-                "exit_idx": exit_res.exit_idx,
+                
+                # WICHTIG: Umbenennung & Neue Spalte
+                "entry_time": exit_res.entry_idx, # war entry_idx
+                "exit_time": exit_res.exit_idx,   # war exit_idx
+                "expiration_time": expiration_str, # neu
+                
                 "entry_price": entry_spec.entry_price,
                 "sl_price": entry_spec.sl_price,
                 "tp_price": entry_spec.tp_price,
@@ -1072,14 +1072,12 @@ def main():
         df_trades = pd.DataFrame(trades_rows)
         print(f"Exit mode {exit_mode}: setups processed: {len(df_setups)}, trades rows: {len(df_trades)}")
 
-        # Trades für diesen Exit-Mode runden und speichern
         df_trades_out = _round_trades_for_output(df_trades.copy())
         trades_file = TRADES_FILE_TEMPLATE.format(exit_suffix=exit_mode)
         print(f"Saving trades ({exit_mode}) to {trades_file} ...")
         df_trades_out.to_csv(trades_file, index=False)
         print("Trades file saved.")
 
-        # Stats für diesen Exit-Modus berechnen (nur gefillte Trades zählen)
         if not df_trades.empty:
             stats = compute_stats(df_trades)
             stats = _round_stats_for_output(stats)
@@ -1087,9 +1085,6 @@ def main():
         else:
             stats_per_exit[exit_mode] = {}
 
-    # -------------------------------------------------
-    # Stats-Matrix: metric, exit_4pm, exit_2pm, ...
-    # -------------------------------------------------
     if stats_per_exit:
         all_metrics = set()
         for s in stats_per_exit.values():
@@ -1110,7 +1105,6 @@ def main():
         print("Stats file saved.")
     else:
         print("No stats to write.")
-
 
 
 if __name__ == "__main__":

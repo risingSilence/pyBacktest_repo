@@ -150,7 +150,11 @@ function buildPhase2Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
         let searchRightTs = null, logicalCloseTs = null;
 
         if (box.signalTs != null && Number.isFinite(box.signalTs)) {
-            logicalCloseTs = box.signalTs + (PHASE2_SIGNAL_BASE_MINUTES || 5) * 60 * 1000;
+            // FIX: Prüfen, ob PHASE2_SIGNAL_BASE_MINUTES eine Zahl ist (auch 0 ist erlaubt!).
+            // Vorher: (PHASE2_SIGNAL_BASE_MINUTES || 5) -> bei 0 griff der Fallback 5.
+            let addMinutes = (typeof PHASE2_SIGNAL_BASE_MINUTES === "number") ? PHASE2_SIGNAL_BASE_MINUTES : 5;
+            
+            logicalCloseTs = box.signalTs + addMinutes * 60 * 1000;
             searchRightTs = logicalCloseTs - 1;
         } else {
             logicalCloseTs = Math.max(t1, t2);
@@ -223,8 +227,9 @@ function buildPhase3Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
     }
 
     for (const tr of PHASE3_TRADES) {
+        // Prüfen auf Zeitgrenze (Snapshot)
         if (pane === "left" && maxAllowedTs != null) {
-            let checkTs = (tr.entryTs != null && Number.isFinite(tr.entryTs)) ? tr.entryTs : tr.entryWindowEndTs;
+            let checkTs = (tr.entryTs != null && Number.isFinite(tr.entryTs)) ? tr.entryTs : tr.expirationTs;
             if (checkTs != null && checkTs > maxAllowedTs) continue;
         }
 
@@ -303,10 +308,13 @@ function buildPhase3Traces(tf, tfData, windowBars, windowStartIdx, windowEndIdx,
         const signalBarIdx = tfData.bars[posSignal].i;
         let startIdx = signalBarIdx + 1;
         let endIdx = null;
-        if (tr.entryWindowEndTs != null && Number.isFinite(tr.entryWindowEndTs)) {
-            let posFirstAfter = findPosGEByTs(tfData, tr.entryWindowEndTs);
+
+        // FIX: Wir nutzen jetzt expirationTs statt entryWindowEndTs
+        if (tr.expirationTs != null && Number.isFinite(tr.expirationTs)) {
+            let posFirstAfter = findPosGEByTs(tfData, tr.expirationTs);
             if (posFirstAfter !== null) { let posEnd = posFirstAfter - 1; if (posEnd < 0) posEnd = 0; endIdx = tfData.bars[posEnd].i; }
         }
+        
         if (endIdx === null) endIdx = maxIdx;
         if (endIdx < startIdx) { const tmp = startIdx; startIdx = endIdx; endIdx = tmp; }
 
