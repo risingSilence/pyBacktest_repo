@@ -100,6 +100,7 @@ class EntrySpec:
     sl_price: float
     tp_price: float
     activation_idx: Any
+    entry_reason: str  # <--- NEU
     scenario_id: str = SCENARIO_ID
 
 @dataclass
@@ -193,6 +194,8 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
     sl_buffer_pips = SL_BUFFER[symbol]
     max_sl_pips = MAX_SL_SIZE[symbol]
     max_sl_price = max_sl_pips * pip_size
+    
+    entry_reason = "Unknown"
 
     # --- SELL LOGIC (Short) ---
     if direction == "sell":
@@ -217,10 +220,12 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
         # Best FVG = niedrigste Untergrenze (aggressivstes Limit)
         best = min(fvgs, key=lambda d: d["lower"])
         entry_price = best["lower"]
+        entry_reason = "Limit (FVG)"
 
         # Max-SL Cap
         if (sl_price - entry_price) > max_sl_price:
             entry_price = sl_price - max_sl_price
+            entry_reason = "Limit (MaxSL)"
 
         # London Squeeze / 2R Target
         risk = sl_price - entry_price
@@ -236,6 +241,7 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
             if (new_risk / pip_size) > max_sl_pips: return None # Squeeze erzwingt zu großen SL -> Skip
             entry_price = sl_price - new_risk
             tp_price = london_level
+            entry_reason = "Limit (Squeeze)"
 
         # Aktivierung: Kerze NACH LL2
         try:
@@ -267,10 +273,12 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
         # Best FVG = höchste Obergrenze (aggressivstes Limit)
         best = max(fvgs, key=lambda d: d["upper"])
         entry_price = best["upper"]
+        entry_reason = "Limit (FVG)"
 
         # Max-SL Cap
         if (entry_price - sl_price) > max_sl_price:
             entry_price = sl_price + max_sl_price
+            entry_reason = "Limit (MaxSL)"
 
         # London Squeeze / 2R Target
         risk = entry_price - sl_price
@@ -285,6 +293,7 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
             if (new_risk / pip_size) > max_sl_pips: return None
             entry_price = sl_price + new_risk
             tp_price = london_level
+            entry_reason = "Limit (Squeeze)"
 
         # Aktivierung: Kerze NACH HH2
         try:
@@ -296,8 +305,7 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
     else:
         return None
 
-    return EntrySpec(symbol, direction, date_ny, setup_idx, float(entry_price), float(sl_price), float(tp_price), activation_idx)
-
+    return EntrySpec(symbol, direction, date_ny, setup_idx, float(entry_price), float(sl_price), float(tp_price), activation_idx, entry_reason)
 
 # ==============================================================================
 # 6. TRADE SIMULATION & EXIT (Standardized)
@@ -594,7 +602,8 @@ def main():
                 "entry_time": res.entry_idx, "exit_time": res.exit_idx, "expiration_time": expiration_str,
                 "entry_price": spec.entry_price, "sl_price": spec.sl_price, "tp_price": spec.tp_price,
                 "exit_price": res.exit_price, "exit_reason": res.exit_reason, "result_R": res.result_R,
-                "sl_size_pips": res.sl_size_pips, "holding_minutes": res.holding_minutes
+                "sl_size_pips": res.sl_size_pips, "holding_minutes": res.holding_minutes,
+                "entry_reason": spec.entry_reason # <--- NEU
             })
             
         df_res = pd.DataFrame(results)

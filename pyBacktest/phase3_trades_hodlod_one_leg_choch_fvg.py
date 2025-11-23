@@ -33,7 +33,7 @@ TARGET_RR = 2.8
 
 # Near-TP Trailing:
 NEAR_TP_TRAILING_ENABLED = False
-NEAR_TP_TRIGGER_R = 1.75
+NEAR_TP_TRIGGER_R = 2.5
 
 # SL Buffer (in Pips) - Halbiert vs. altes Setup
 SL_BUFFER = { 
@@ -102,6 +102,7 @@ class EntrySpec:
     tp_price: float
     activation_idx: Any
     order_type: str
+    entry_reason: str  # <--- NEU
     scenario_id: str = SCENARIO_ID
 
 @dataclass
@@ -231,11 +232,13 @@ def build_entry_for_setup_relaxed(setup_row: pd.Series,
     dist_market_price = abs(signal_close - sl_price)
     candidate_entry = None
     order_type = "limit"
+    entry_reason = "Limit (Fallback)" # Default
 
     if dist_market_price <= max_sl_price:
         # Risiko klein genug -> Market Entry möglich
         candidate_entry = signal_close
         order_type = "market"
+        entry_reason = "Market"
     else:
         # Risiko zu groß -> Suche FVG im Leg 1 (besserer Preis)
         try:
@@ -258,16 +261,20 @@ def build_entry_for_setup_relaxed(setup_row: pd.Series,
             if fvgs:
                 best = min(fvgs, key=lambda d: d["lower"])
                 candidate_entry = best["lower"]
+                entry_reason = "Limit (FVG)"
             else:
                 candidate_entry = signal_close # Fallback
+                entry_reason = "Limit (Signal Close)"
         else:
             # Long: Nimm Bull FVG mit höchster Oberkante
             fvgs = _scan_bull_fvgs_with_bounds(highs, lows, pos_start, pos_end, pip_size)
             if fvgs:
                 best = max(fvgs, key=lambda d: d["upper"])
                 candidate_entry = best["upper"]
+                entry_reason = "Limit (FVG)"
             else:
                 candidate_entry = signal_close
+                entry_reason = "Limit (Signal Close)"
         
         order_type = "limit"
 
@@ -277,6 +284,7 @@ def build_entry_for_setup_relaxed(setup_row: pd.Series,
         if direction == "sell": candidate_entry = sl_price - max_sl_price
         else: candidate_entry = sl_price + max_sl_price
         order_type = "limit"
+        entry_reason = "Limit (MaxSL)"
 
     # --- STEP C: LONDON SQUEEZE (PRIORITY) ---
     tp_price = None
@@ -298,6 +306,7 @@ def build_entry_for_setup_relaxed(setup_row: pd.Series,
                     candidate_entry = sl_price - new_risk
                     tp_price = london_low
                     order_type = "limit"
+                    entry_reason = "Limit (Squeeze)"
             else:
                 tp_price = proj_tp
         else:
@@ -320,14 +329,14 @@ def build_entry_for_setup_relaxed(setup_row: pd.Series,
                     candidate_entry = sl_price + new_risk
                     tp_price = london_high
                     order_type = "limit"
+                    entry_reason = "Limit (Squeeze)"
             else:
                 tp_price = proj_tp
         else:
             risk = candidate_entry - sl_price
             tp_price = candidate_entry + TARGET_RR * risk
 
-    return EntrySpec(symbol, direction, date_ny, setup_idx, float(candidate_entry), float(sl_price), float(tp_price), activation_idx, order_type)
-
+    return EntrySpec(symbol, direction, date_ny, setup_idx, float(candidate_entry), float(sl_price), float(tp_price), activation_idx, order_type, entry_reason)
 
 # ==============================================================================
 # 6. TRADE SIMULATION & EXIT
@@ -641,7 +650,8 @@ def main():
                 "entry_time": res.entry_idx, "exit_time": res.exit_idx, "expiration_time": expiration_str,
                 "entry_price": spec.entry_price, "sl_price": spec.sl_price, "tp_price": spec.tp_price,
                 "exit_price": res.exit_price, "exit_reason": res.exit_reason, "result_R": res.result_R,
-                "sl_size_pips": res.sl_size_pips, "holding_minutes": res.holding_minutes
+                "sl_size_pips": res.sl_size_pips, "holding_minutes": res.holding_minutes,
+                "entry_reason": spec.entry_reason  # <--- NEU
             })
             
         df_res = pd.DataFrame(results)
