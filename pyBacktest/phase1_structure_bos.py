@@ -10,10 +10,6 @@ from datetime import datetime
 
 SYMBOL = "EURUSD"
 
-# Zeitraum für die Berechnung (Filter)
-START_DATE_NY = datetime(2023, 1, 1)
-END_DATE_NY   = datetime(2025, 11, 8)
-
 DATA_DIR = "data"
 
 # Input: Output aus phase0b (generischer Name)
@@ -1325,20 +1321,11 @@ def main():
     if "time_ny" not in df_all.columns:
         raise RuntimeError("Column 'time_ny' not found in input file.")
 
-    # Index setzen
+    # Set index
     df_all["time_ny"] = pd.to_datetime(df_all["time_ny"])
     df_all = df_all.set_index("time_ny").sort_index()
 
-    # --- NEU: DATUMS-FILTER ---
-    print(f"Filtering data to range: {START_DATE_NY} -> {END_DATE_NY}")
-    # Wir filtern hier hart auf den Index.
-    # (>= Start und < Ende, damit es konsistent zu slices ist)
-    mask = (df_all.index >= START_DATE_NY) & (df_all.index < END_DATE_NY)
-    df_all = df_all.loc[mask]
-
-    if df_all.empty:
-        raise RuntimeError(f"No data left after filtering for {START_DATE_NY} to {END_DATE_NY}")
-    # --------------------------
+    # No date filtering in Phase 1 anymore (moved to Phase 2)
 
     df_sym = df_all[df_all["symbol"] == SYMBOL].copy()
     if df_sym.empty:

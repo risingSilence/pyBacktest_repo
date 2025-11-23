@@ -3,6 +3,13 @@ print("phase2_signals_hodlod_micro_two_leg_fvg.py - starting up...")
 import pandas as pd
 import os
 import numpy as np
+try:
+    from config import START_DATE_NY, END_DATE_NY
+except ImportError:
+    from datetime import datetime
+    print("WARN: config.py not found, using default dates.")
+    START_DATE_NY = datetime(2025, 11, 1) # NUR FALLBACK!!!
+    END_DATE_NY   = datetime(2025, 11, 8) # NUR FALLBACK!!!
 
 # ---------------------------------
 # CONFIG
@@ -438,6 +445,15 @@ def main():
         raise RuntimeError("Column 'time_ny' not found in input file.")
 
     df = _ensure_time_columns(df)
+
+    # --- DATE FILTER (from config.py) ---
+    print(f"Filtering data to range: {START_DATE_NY} -> {END_DATE_NY}")
+    mask = (df.index >= START_DATE_NY) & (df.index < END_DATE_NY)
+    df = df.loc[mask]
+
+    if df.empty:
+        raise RuntimeError(f"No data left after filtering for {START_DATE_NY} to {END_DATE_NY}")
+    # ------------------------------------
 
     df_sym = df[df["symbol"] == symbol].copy()
     if df_sym.empty:
