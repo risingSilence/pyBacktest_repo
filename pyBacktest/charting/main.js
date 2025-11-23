@@ -72,7 +72,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (phase2Select) {
         phase2Select.addEventListener("change", async (e) => {
             phase2File = e.target.value || null;
+            
+            // UI Update für P3 Dropdown triggern (Filterung anwenden)
+            if (typeof updatePhase3DropdownUI === "function") {
+                updatePhase3DropdownUI();
+                // Da sich phase3File durch den Filter geändert haben könnte (Auto-Select),
+                // laden wir die (neue) Phase 3 Datei direkt mit.
+                await loadPhase3File(phase3File);
+            }
+
             await loadPhase2File(phase2File);
+            
             if (typeof rerenderCurrentViewWithPhases === "function") rerenderCurrentViewWithPhases();
             rebuildSetupsList();
         });

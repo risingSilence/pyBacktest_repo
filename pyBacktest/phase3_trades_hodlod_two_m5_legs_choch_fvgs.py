@@ -451,8 +451,6 @@ def simulate_trade_for_exit_mode(entry: EntrySpec, df_day: pd.DataFrame, exit_mo
     session_close_mod, bos_target = NY_SESSION_CLOSE_MOD, None
     if exit_mode == "exit_2pm": session_close_mod = NY_2PM_MOD
     elif exit_mode == "exit_unmanaged": session_close_mod = None
-    elif exit_mode == "exit_post_2pm_1st_bos": session_close_mod = None; bos_target = 1
-    elif exit_mode == "exit_post_2pm_2nd_bos": session_close_mod = None; bos_target = 2
     
     return _simulate_exit_phase(entry, df_day, entry_idx, session_close_mod, bos_target)
 
@@ -574,7 +572,7 @@ def main():
     df_bars = _ensure_time_columns(df_bars)
     df_setups = pd.read_csv(INPUT_SETUPS_FILE)
     
-    exit_variants = ["exit_4pm", "exit_2pm", "exit_post_2pm_1st_bos", "exit_post_2pm_2nd_bos", "exit_unmanaged"]
+    exit_variants = ["exit_4pm", "exit_2pm", "exit_unmanaged"]
     stats_per_exit = {}
 
     for exit_mode in exit_variants:

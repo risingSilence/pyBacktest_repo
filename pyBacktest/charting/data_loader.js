@@ -354,6 +354,20 @@ function getSortedSetups() {
     return list;
 }
 
+// Cache for file lists to prevent UI flickering
+let lastScannedPhase2List = null;
+let lastScannedPhase3List = null;
+
+function areArraysEqual(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
 // --- Async File Loaders ---
 
 async function scanPhaseFiles() {
@@ -372,7 +386,19 @@ async function scanPhaseFiles() {
         const phase2 = files.filter(name => /_setups_.*\.csv$/i.test(name) || name.endsWith("_setups.csv")).sort();
         const phase3 = files.filter(name => /_trades_.*\.csv$/i.test(name)).sort();
 
-        if (typeof updatePhaseDropdowns === "function") updatePhaseDropdowns(phase2, phase3);
+        // Check if lists changed to avoid UI flickering
+        const p2Changed = !areArraysEqual(phase2, lastScannedPhase2List);
+        const p3Changed = !areArraysEqual(phase3, lastScannedPhase3List);
+
+        if (p2Changed || p3Changed) {
+            lastScannedPhase2List = phase2;
+            lastScannedPhase3List = phase3;
+            
+            if (typeof updatePhaseDropdowns === "function") {
+                console.log("[FileScan] File list changed, updating dropdowns.");
+                updatePhaseDropdowns(phase2, phase3);
+            }
+        }
     } catch (e) {
         console.warn("Phase file scan error:", e);
     }

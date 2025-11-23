@@ -57,34 +57,84 @@ function buildTfSelects() {
     });
 }
 
+function getMatchingTradesFiles(setupFile, allTradesFiles) {
+    if (!setupFile || !allTradesFiles) return [];
+    try {
+        // Konvention: data_XXX_setups_YYY.csv -> data_XXX_trades_YYY...
+        const base = setupFile.replace("_setups_", "_trades_").replace(".csv", "");
+        return allTradesFiles.filter(f => f.startsWith(base));
+    } catch (e) {
+        return [];
+    }
+}
+
+function updatePhase3DropdownUI() {
+    const p3Select = document.getElementById("phase3-file-select");
+    if (!p3Select) return;
+
+    const currentSelection = phase3File; 
+    // Filtere P3-Dateien basierend auf der aktuellen P2-Datei
+    const filteredP3 = getMatchingTradesFiles(phase2File, phase3Files);
+
+    p3Select.innerHTML = "";
+    
+    if (!filteredP3.length) {
+        const opt = document.createElement("option"); 
+        opt.value = ""; 
+        opt.textContent = "(no matching trades found)"; 
+        p3Select.appendChild(opt);
+        phase3File = null; 
+    } else {
+        filteredP3.forEach(fn => {
+            const opt = document.createElement("option"); 
+            opt.value = fn; 
+            opt.textContent = fn; 
+            p3Select.appendChild(opt);
+        });
+
+        // Logik: Aktuelle Datei behalten, wenn sie noch in der gefilterten Liste ist
+        // Ansonsten die erste verfügbare Datei wählen (Auto-Select Next)
+        if (currentSelection && filteredP3.includes(currentSelection)) {
+            p3Select.value = currentSelection;
+        } else {
+            phase3File = filteredP3[0];
+            p3Select.value = phase3File;
+        }
+    }
+}
+
 function updatePhaseDropdowns(newPhase2Files, newPhase3Files) {
     const p2Select = document.getElementById("phase2-file-select");
     const p3Select = document.getElementById("phase3-file-select");
     if (!p2Select || !p3Select) return;
 
+    // Globale Listen aktualisieren
     phase2Files = newPhase2Files || [];
-    phase3Files = newPhase3Files || [];
-    const currentP2 = phase2File, currentP3 = phase3File;
+    phase3Files = newPhase3Files || []; // Speichert ALLE P3 Dateien
+    
+    const currentP2 = phase2File;
 
+    // --- Phase 2 Dropdown ---
     p2Select.innerHTML = "";
     if (!phase2Files.length) {
-        const opt = document.createElement("option"); opt.value = ""; opt.textContent = "(no setups files found)"; p2Select.appendChild(opt); phase2File = null;
+        const opt = document.createElement("option"); opt.value = ""; opt.textContent = "(no setups files found)"; p2Select.appendChild(opt);
+        phase2File = null;
     } else {
-        phase2Files.forEach(fn => { const opt = document.createElement("option"); opt.value = fn; opt.textContent = fn; p2Select.appendChild(opt); });
-        if (currentP2 && phase2Files.includes(currentP2)) phase2File = currentP2;
-        else phase2File = phase2Files[0];
+        phase2Files.forEach(fn => {
+            const opt = document.createElement("option"); opt.value = fn; opt.textContent = fn; p2Select.appendChild(opt);
+        });
+        
+        // Falls aktuelle P2 Datei verschwindet -> Reset auf Erste
+        if (currentP2 && phase2Files.includes(currentP2)) {
+            phase2File = currentP2;
+        } else {
+            phase2File = phase2Files[0];
+        }
         p2Select.value = phase2File || "";
     }
 
-    p3Select.innerHTML = "";
-    if (!phase3Files.length) {
-        const opt = document.createElement("option"); opt.value = ""; opt.textContent = "(no trades files found)"; p3Select.appendChild(opt); phase3File = null;
-    } else {
-        phase3Files.forEach(fn => { const opt = document.createElement("option"); opt.value = fn; opt.textContent = fn; p3Select.appendChild(opt); });
-        if (currentP3 && phase3Files.includes(currentP3)) phase3File = currentP3;
-        else phase3File = phase3Files[0];
-        p3Select.value = phase3File || "";
-    }
+    // --- Phase 3 Dropdown (Gefiltert) ---
+    updatePhase3DropdownUI();
 }
 
 function syncUiToState() {
