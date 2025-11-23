@@ -59,7 +59,6 @@ NY_START_HOD_LOD = 8 * 60 + 30      # 08:30
 NY_END_HOD_LOD   = 11 * 60          # 11:00 (Anker muss in diesem Fenster liegen)
 NY_SIGNAL_CUTOFF = 11 * 60 + 30     # 11:30 (Signal/CHOCH muss davor passieren)
 
-
 # ---------------------------------
 # Hilfsfunktionen (Zeit & Index)
 # ---------------------------------

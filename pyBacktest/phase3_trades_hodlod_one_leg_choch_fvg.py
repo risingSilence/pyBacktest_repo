@@ -29,28 +29,24 @@ SCENARIO_ID = "one_leg_market_or_fvg"
 OVERWRITE_STATS_FILE = False  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
 
 # Target Risk-Reward Ratio (Standard)
-TARGET_RR = 2.0 
-
-# Squeeze Logic (London Level):
-# Wenn 2R nicht erreichbar ist, wird das Risiko durch diesen Faktor geteilt
-SQUEEZE_RISK_DIVISOR = 3.0
+TARGET_RR = 2.8
 
 # Near-TP Trailing:
-NEAR_TP_TRAILING_ENABLED = True
+NEAR_TP_TRAILING_ENABLED = False
 NEAR_TP_TRIGGER_R = 1.75
 
 # SL Buffer (in Pips) - Halbiert vs. altes Setup
 SL_BUFFER = { 
     "AUDUSD": 0.3, 
-    "EURUSD": 0.4, 
+    "EURUSD": 0.4, # 0.4 default 
     "GBPUSD": 0.5, 
 }
 
 # Max SL Size (in Pips) - Verschärft
 MAX_SL_SIZE = { 
     "AUDUSD": 9.0, 
-    "EURUSD": 12.0, 
-    "GBPUSD": 14.0, 
+    "EURUSD": 12.0, # 12.0 default 
+    "GBPUSD": 15.0, 
 }
 
 PIP_SIZE_MAP = {
@@ -62,7 +58,6 @@ PIP_SIZE_MAP = {
 # --- TIME SETTINGS (NEW YORK TIME) ---
 
 # Späteste Uhrzeit für einen ENTRY (Limit Fill oder Market)
-# Trades danach werden als "missed" (no_fill_until_noon) gewertet.
 ENTRY_CUTOFF_HOUR = 12
 ENTRY_CUTOFF_MINUTE = 0
 
@@ -77,6 +72,9 @@ EXIT_SESSION_CLOSE_MINUTE = 0
 # Ab wann startet das BOS-Trailing (für exit_post_2pm_... Modi)
 BOS_TRAILING_START_HOUR = 14
 BOS_TRAILING_START_MINUTE = 0
+
+# --- INTERNAL CONSTANTS ---
+SQUEEZE_RISK_DIVISOR = TARGET_RR + 1 # NICHT ANFASSEN!!
 
 
 # ==============================================================================

@@ -26,31 +26,27 @@ OUTPUT_STATS_FILE = os.path.join(CHART_DATA_DIR, f"data_{SYMBOL}_M5_stats_{SETUP
 SCENARIO_ID = "limit_fvg2_london_2R"
 
 # Stats Output Config
-OVERWRITE_STATS_FILE = True  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
+OVERWRITE_STATS_FILE = False  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
 
 # Target Risk-Reward Ratio (Standard)
-TARGET_RR = 2.0 
-
-# Squeeze Logic (London Level):
-# Wenn 2R nicht erreichbar ist, wird das Risiko durch diesen Faktor geteilt
-SQUEEZE_RISK_DIVISOR = 3.0  
+TARGET_RR = 2.8
 
 # Near-TP Trailing:
-NEAR_TP_TRAILING_ENABLED = True
+NEAR_TP_TRAILING_ENABLED = False
 NEAR_TP_TRIGGER_R = 1.75
 
-# SL Buffer (Original Two-Leg Werte: Strikter/Größer)
+# SL Buffer (in Pips) - Halbiert vs. altes Setup
 SL_BUFFER = { 
-    "AUDUSD": 0.5, 
-    "EURUSD": 0.8, 
-    "GBPUSD": 1.0, 
+    "AUDUSD": 0.3, 
+    "EURUSD": 0.4, # 0.4 default 
+    "GBPUSD": 0.5, 
 }
 
-# Max SL Size (Original Two-Leg Werte: Größer)
+# Max SL Size (in Pips) - Verschärft
 MAX_SL_SIZE = { 
-    "AUDUSD": 18.0, 
-    "EURUSD": 24.0, 
-    "GBPUSD": 28.0, 
+    "AUDUSD": 9.0, 
+    "EURUSD": 12.0, # 12.0 default 
+    "GBPUSD": 15.0, 
 }
 
 PIP_SIZE_MAP = {
@@ -76,6 +72,9 @@ EXIT_SESSION_CLOSE_MINUTE = 0
 # Ab wann startet das BOS-Trailing (für exit_post_2pm_... Modi)
 BOS_TRAILING_START_HOUR = 14
 BOS_TRAILING_START_MINUTE = 0
+
+# --- INTERNAL CONSTANTS ---
+SQUEEZE_RISK_DIVISOR = TARGET_RR + 1 # NICHT ANFASSEN!!
 
 
 # ==============================================================================
