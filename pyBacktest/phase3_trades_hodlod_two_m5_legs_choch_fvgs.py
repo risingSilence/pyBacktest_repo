@@ -31,7 +31,7 @@ GLOBAL_TARGET_RR = 2.8
 TARGET_RR_MAP = {
     "AUDUSD": 2.8,
     "EURUSD": 2.8,
-    "GBPUSD": 2.8,
+    "GBPUSD": 3.9,
 }
 
 # --- NEAR-TP TRAILING CONFIG ---
@@ -56,7 +56,7 @@ SL_BUFFER = {
 MAX_SL_SIZE = { 
     "AUDUSD": 9.0, 
     "EURUSD": 12.0, # 12.0 default 
-    "GBPUSD": 15.0, 
+    "GBPUSD": 14.0, 
 }
 
 PIP_SIZE_MAP = {

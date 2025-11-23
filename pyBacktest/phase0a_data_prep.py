@@ -23,7 +23,7 @@ SYMBOLS = ["EURUSD", "GBPUSD"]#, "AUDUSD"]
 
 # Zeitraum in NEW YORK ZEIT
 START_DATE_NY = datetime(2021, 1, 1)
-END_DATE_NY   = datetime(2025, 11, 8)  # ggf. anpassen
+END_DATE_NY   = datetime(2025, 11, 21)  # ggf. anpassen
 
 # Local time (GMT+1) -> NY (GMT-5) = -6 Stunden
 LOCAL_TO_NY_OFFSET_HOURS = 6
