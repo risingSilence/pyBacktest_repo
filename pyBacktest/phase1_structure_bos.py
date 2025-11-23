@@ -8,17 +8,10 @@ from datetime import datetime
 # CONFIG
 # ---------------------------------
 
-SYMBOL = "EURUSD"
+# Liste der Symbole
+SYMBOLS = ["EURUSD", "GBPUSD"]
 
 DATA_DIR = "data"
-
-# Input: Output aus phase0b (generischer Name)
-INPUT_FILENAME = f"data_{SYMBOL}_M5_phase0_enriched.csv"
-INPUT_FILE = os.path.join(DATA_DIR, INPUT_FILENAME)
-
-# Output: Struktur-/BOS-File (Basis für Phase 2)
-OUTPUT_FILENAME = f"data_{SYMBOL}_M5_phase1_structure.csv"
-OUTPUT_FILE = os.path.join(DATA_DIR, OUTPUT_FILENAME)
 
 PIP_SIZE = 0.0001
 
@@ -1308,15 +1301,26 @@ def detect_bos(df: pd.DataFrame, struct_points: list) -> pd.DataFrame:
     df["bos_down"] = bos_down_list
     return df
 
-
 # ---------------------------------
-# PIPELINE
+# PIPELINE WRAPPER
 # ---------------------------------
 
+def run_phase1_for_symbol(symbol: str):
+    print(f"--- Processing Phase 1 for {symbol} ---")
 
-def main():
-    print("Loading input file...", INPUT_FILE)
-    df_all = pd.read_csv(INPUT_FILE)
+    # Dateinamen dynamisch
+    input_filename = f"data_{symbol}_M5_phase0_enriched.csv"
+    input_file = os.path.join(DATA_DIR, input_filename)
+
+    output_filename = f"data_{symbol}_M5_phase1_structure.csv"
+    output_file = os.path.join(DATA_DIR, output_filename)
+
+    if not os.path.exists(input_file):
+        print(f"Skipping {symbol}: Input file not found ({input_file})")
+        return
+
+    print("Loading input file...", input_file)
+    df_all = pd.read_csv(input_file)
 
     if "time_ny" not in df_all.columns:
         raise RuntimeError("Column 'time_ny' not found in input file.")
@@ -1325,21 +1329,24 @@ def main():
     df_all["time_ny"] = pd.to_datetime(df_all["time_ny"])
     df_all = df_all.set_index("time_ny").sort_index()
 
-    # No date filtering in Phase 1 anymore (moved to Phase 2)
-
-    df_sym = df_all[df_all["symbol"] == SYMBOL].copy()
+    # Filter auf Symbol
+    df_sym = df_all[df_all["symbol"] == symbol].copy()
     if df_sym.empty:
-        raise RuntimeError(f"No data for {SYMBOL} in filtered dataset")
+        print(f"Warning: No data for {symbol} in dataset.")
+        return
 
-    print(f"Rows for {SYMBOL} (filtered): {len(df_sym)}")
+    print(f"Rows for {symbol}: {len(df_sym)}")
 
-    min_swing_price = get_min_swing_price(SYMBOL)
-    choch_price = get_choch_price(SYMBOL)
-    skip_price = get_skip_price(SYMBOL)
+    # Parameter dynamisch für das aktuelle Symbol holen
+    min_swing_price = get_min_swing_price(symbol)
+    choch_price = get_choch_price(symbol)
+    skip_price = get_skip_price(symbol)
 
     print(f"Min swing amplitude (pivot):                 {min_swing_price}")
     print(f"CHOCH price threshold (for BOS/CHOCH logic): {choch_price}")
     print(f"Min lookahead/lookforward skip pips (price): {skip_price}")
+
+    # --- CORE LOGIC (Steps 1-13) ---
 
     # 1) Pivot-Swings + prev-candle-Overrides
     base_points = detect_struct_points(df_sym, min_swing_price, skip_price)
@@ -1358,19 +1365,16 @@ def main():
     choch_bull = scan_bullish_choch(df_sym, df_pre, choch_price)
 
     # 4c) Single-Counter-Engulfing (zusätzliche Struktur-L/H)
-    sc_threshold = get_single_counter_engulfing_price(SYMBOL)
+    sc_threshold = get_single_counter_engulfing_price(symbol)
     sc_points = scan_single_counter_engulfing(df_sym, sc_threshold)
 
-    # 5) Punkte + CHOCH + SC-Points mergen, dann nochmal Zwischen-Swings
+    # 5) Merge
     points_with_choch_sc = merge_struct_points(base_plus_interm1, choch_bear, choch_bull, sc_points)
     interm2 = ensure_intermediate_swings(df_sym, points_with_choch_sc)
     all_points = merge_struct_points(points_with_choch_sc, interm2)
     all_points.sort(key=lambda x: x["pos"])
 
     print(f"Total structural points after CHOCH + SC + intermediates: {len(all_points)}")
-
-    # danach wie gehabt: apply_body_filter / merge_consecutive_extremes / relabel_inside_legs / detect_bos ...
-
 
     # 6) Body-Filter anwenden
     all_points = apply_body_filter(df_sym, all_points)
@@ -1400,9 +1404,18 @@ def main():
     df_final = detect_bos(df_final, all_points)
 
     # 13) Speichern
-    print(f"Saving to {OUTPUT_FILE} ...")
-    df_final.to_csv(OUTPUT_FILE, index=True)
-    print("Done.")
+    print(f"Saving to {output_file} ...")
+    df_final.to_csv(output_file, index=True)
+    print(f"Done for {symbol}.\n")
+
+
+# ---------------------------------
+# MAIN
+# ---------------------------------
+
+def main():
+    for sym in SYMBOLS:
+        run_phase1_for_symbol(sym)
 
 
 if __name__ == "__main__":

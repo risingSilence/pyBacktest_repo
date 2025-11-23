@@ -10,17 +10,14 @@ import os
 # 1. CONFIGURATION & PARAMETERS
 # ==============================================================================
 
-SYMBOL = "EURUSD"
-SETUP_NAME = "hodlod_one_leg_choch_fvg" # Muss exakt zum Phase 2 Output passen
+# Liste der Symbole
+SYMBOLS = ["EURUSD", "GBPUSD"]
+
+# WICHTIG: Muss exakt so heißen wie in deiner neuen Phase 2 Datei definiert!
+SETUP_NAME = "hodlod_one_leg_choch_fvg"
 
 # --- PATHS ---
 CHART_DATA_DIR = "charting/data"
-INPUT_BARS_FILENAME = f"data_{SYMBOL}_M5_signals_{SETUP_NAME}.csv"
-INPUT_BARS_FILE = os.path.join(CHART_DATA_DIR, INPUT_BARS_FILENAME)
-INPUT_SETUPS_FILENAME = f"data_{SYMBOL}_M5_setups_{SETUP_NAME}.csv"
-INPUT_SETUPS_FILE = os.path.join(CHART_DATA_DIR, INPUT_SETUPS_FILENAME)
-TRADES_FILE_TEMPLATE = os.path.join(CHART_DATA_DIR, f"data_{SYMBOL}_M5_trades_{SETUP_NAME}_{{exit_suffix}}.csv")
-OUTPUT_STATS_FILE = os.path.join(CHART_DATA_DIR, f"data_{SYMBOL}_M5_stats_{SETUP_NAME}.csv")
 
 # --- RISK & TRADE PARAMETERS ---
 SCENARIO_ID = "one_leg_market_or_fvg"
@@ -602,26 +599,37 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
 
     return stats
 
+# ---------------------------------
+# MAIN EXECUTION
+# ---------------------------------
 
-# ==============================================================================
-# 8. MAIN EXECUTION
-# ==============================================================================
+def run_phase3_one_leg_for_symbol(symbol: str):
+    print(f"--- Processing Phase 3 (One Leg) for {symbol} ---")
 
-def main():
-    print(f"Running Phase 3 Backtest: {SETUP_NAME}")
-    if not os.path.exists(INPUT_BARS_FILE) or not os.path.exists(INPUT_SETUPS_FILE):
-        print("Input files not found. Run Phase 2 first.")
+    # Dateinamen dynamisch bauen
+    input_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}.csv"
+    input_bars_file = os.path.join(CHART_DATA_DIR, input_bars_filename)
+
+    input_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}.csv"
+    input_setups_file = os.path.join(CHART_DATA_DIR, input_setups_filename)
+
+    # Templates für Output
+    trades_file_template = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_trades_{SETUP_NAME}_{{exit_suffix}}.csv")
+    output_stats_file = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_stats_{SETUP_NAME}.csv")
+
+    if not os.path.exists(input_bars_file) or not os.path.exists(input_setups_file):
+        print(f"Skipping {symbol}: Input files not found. Run Phase 2 first.")
         return
 
-    df_bars = pd.read_csv(INPUT_BARS_FILE)
+    df_bars = pd.read_csv(input_bars_file)
     df_bars = _ensure_time_columns(df_bars)
-    df_setups = pd.read_csv(INPUT_SETUPS_FILE)
+    df_setups = pd.read_csv(input_setups_file)
     
     exit_variants = ["exit_4pm", "exit_2pm", "exit_unmanaged"]
     stats_per_exit = {}
 
     for exit_mode in exit_variants:
-        print(f"Processing {exit_mode}...")
+        # print(f"  Mode: {exit_mode}...")
         results = []
         
         for i, row in df_setups.iterrows():
@@ -629,7 +637,6 @@ def main():
             df_day = df_bars[df_bars["date_ny"].astype(str) == str(date_ny)].copy()
             if df_day.empty: continue
             
-            # Use configured Entry Cutoff for Visualization Expiration
             expiration_str = f"{date_ny} {ENTRY_CUTOFF_HOUR:02d}:{ENTRY_CUTOFF_MINUTE:02d}:00"
 
             spec = build_entry_for_setup_relaxed(row, df_day, i)
@@ -647,12 +654,12 @@ def main():
                 "entry_price": spec.entry_price, "sl_price": spec.sl_price, "tp_price": spec.tp_price,
                 "exit_price": res.exit_price, "exit_reason": res.exit_reason, "result_R": res.result_R,
                 "sl_size_pips": res.sl_size_pips, "holding_minutes": res.holding_minutes,
-                "entry_reason": spec.entry_reason  # <--- NEU
+                "entry_reason": spec.entry_reason
             })
             
         df_res = pd.DataFrame(results)
         df_res = _round_trades(df_res)
-        out_file = TRADES_FILE_TEMPLATE.format(exit_suffix=exit_mode)
+        out_file = trades_file_template.format(exit_suffix=exit_mode)
         df_res.to_csv(out_file, index=False)
         
         if not df_res.empty:
@@ -670,24 +677,24 @@ def main():
         
         rows = []
         
-        # 1. Performance Metrics (Standard)
+        # 1. Performance Metrics
         for metric in all_metrics:
             row = {"metric": metric}
             for exit_mode in exit_variants:
                 row[exit_mode] = stats_per_exit.get(exit_mode, {}).get(metric, np.nan)
             rows.append(row)
 
-        # 2. Configuration Metadata (NEU: Config-Werte als Zeilen anhängen)
+        # 2. Configuration Metadata
         def _fmt_time(h, m): return f"{h:02d}:{m:02d}"
         
         config_meta = [
-            ("cfg_symbol", SYMBOL),
+            ("cfg_symbol", symbol),
             ("cfg_target_rr", TARGET_RR),
             ("cfg_squeeze_divisor", SQUEEZE_RISK_DIVISOR),
-            ("cfg_near_tp_enabled", NEAR_TP_TRAILING_ENABLED), # NEU
+            ("cfg_near_tp_enabled", NEAR_TP_TRAILING_ENABLED),
             ("cfg_near_tp_trigger_r", NEAR_TP_TRIGGER_R),
-            ("cfg_sl_buffer_pips", SL_BUFFER.get(SYMBOL, np.nan)),
-            ("cfg_max_sl_pips", MAX_SL_SIZE.get(SYMBOL, np.nan)),
+            ("cfg_sl_buffer_pips", SL_BUFFER.get(symbol, np.nan)),
+            ("cfg_max_sl_pips", MAX_SL_SIZE.get(symbol, np.nan)),
             ("cfg_entry_cutoff_time", _fmt_time(ENTRY_CUTOFF_HOUR, ENTRY_CUTOFF_MINUTE)),
             ("cfg_exit_2pm_time", _fmt_time(EXIT_2PM_HOUR, EXIT_2PM_MINUTE)),
             ("cfg_session_close_time", _fmt_time(EXIT_SESSION_CLOSE_HOUR, EXIT_SESSION_CLOSE_MINUTE)),
@@ -696,20 +703,26 @@ def main():
 
         for name, val in config_meta:
             row = {"metric": name}
-            # Config ist für alle Exit-Varianten gleich, daher Wert wiederholen
             for exit_mode in exit_variants:
                 row[exit_mode] = val 
             rows.append(row)
             
         df_stats = pd.DataFrame(rows)
         
-        # Dateinamen-Logik anwenden
-        final_output_file = OUTPUT_STATS_FILE
+        final_output_file = output_stats_file
         if not OVERWRITE_STATS_FILE and os.path.exists(final_output_file):
             final_output_file = _get_unique_filepath(final_output_file)
             
         df_stats.to_csv(final_output_file, index=False)
         print(f"Stats saved to {final_output_file}")
+    
+    print(f"Done for {symbol}.\n")
+
+
+def main():
+    for sym in SYMBOLS:
+        run_phase3_one_leg_for_symbol(sym)
+
 
 if __name__ == "__main__":
     main()

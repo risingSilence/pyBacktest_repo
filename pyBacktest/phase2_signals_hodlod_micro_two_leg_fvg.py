@@ -15,7 +15,8 @@ except ImportError:
 # CONFIG
 # ---------------------------------
 
-SYMBOL = "EURUSD"
+# Liste der Symbole
+SYMBOLS = ["EURUSD", "GBPUSD"]
 
 # Setup-Name für Dateinamen
 SETUP_NAME = "hodlod_micro_two_leg_fvg"
@@ -27,18 +28,6 @@ SETUP_TF_MINUTES = 5         # Dauer einer Kerze in Minuten (für End-Zeit-Berec
 # Pfade definieren
 BASE_DATA_DIR = "data"             # Hier liegt der Phase 1 Output
 CHART_DATA_DIR = "charting/data"   # Hierhin schreiben wir für die HTML
-
-# Input: Struktur-Daten aus Phase 1
-INPUT_FILENAME = f"data_{SYMBOL}_M5_phase1_structure.csv"
-INPUT_FILE = os.path.join(BASE_DATA_DIR, INPUT_FILENAME)
-
-# Output 1: Die Bars mit den Signalen (für Phase 3 und Visualisierung)
-OUTPUT_BARS_FILENAME = f"data_{SYMBOL}_M5_signals_{SETUP_NAME}.csv"
-OUTPUT_BARS_FILE = os.path.join(CHART_DATA_DIR, OUTPUT_BARS_FILENAME)
-
-# Output 2: Die Setups/Boxen (für Phase 3 und Visualisierung)
-OUTPUT_SETUPS_FILENAME = f"data_{SYMBOL}_M5_setups_{SETUP_NAME}.csv"
-OUTPUT_SETUPS_FILE = os.path.join(CHART_DATA_DIR, OUTPUT_SETUPS_FILENAME)
 
 # Parameter
 PIP_SIZE_MAP = {
@@ -424,22 +413,37 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
     
     return None
 
-
 # ---------------------------------
 # MAIN-LOGIK
 # ---------------------------------
 
-def main():
+def run_phase2_micro_for_symbol(symbol: str):
+    print(f"--- Processing Phase 2 (Micro Two Leg) for {symbol} ---")
+
     if not os.path.exists(CHART_DATA_DIR):
         os.makedirs(CHART_DATA_DIR)
 
-    symbol = SYMBOL
+    # Dateinamen dynamisch
+    input_filename = f"data_{symbol}_M5_phase1_structure.csv"
+    input_file = os.path.join(BASE_DATA_DIR, input_filename)
+
+    output_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}.csv"
+    output_bars_file = os.path.join(CHART_DATA_DIR, output_bars_filename)
+
+    output_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}.csv"
+    output_setups_file = os.path.join(CHART_DATA_DIR, output_setups_filename)
+
+    if not os.path.exists(input_file):
+        print(f"Skipping {symbol}: Input file not found ({input_file})")
+        return
+
     if symbol not in PIP_SIZE_MAP:
-        raise RuntimeError(f"No PIP_SIZE_MAP entry for symbol {symbol}")
+        print(f"Skipping {symbol}: No PIP_SIZE_MAP entry.")
+        return
     pip_size = PIP_SIZE_MAP[symbol]
 
-    print(f"Loading input file {INPUT_FILE} ...")
-    df = pd.read_csv(INPUT_FILE)
+    print(f"Loading input file {input_file} ...")
+    df = pd.read_csv(input_file)
 
     if "time_ny" not in df.columns:
         raise RuntimeError("Column 'time_ny' not found in input file.")
@@ -452,12 +456,14 @@ def main():
     df = df.loc[mask]
 
     if df.empty:
-        raise RuntimeError(f"No data left after filtering for {START_DATE_NY} to {END_DATE_NY}")
+        print(f"No data left after filtering for {START_DATE_NY} to {END_DATE_NY}")
+        return
     # ------------------------------------
 
     df_sym = df[df["symbol"] == symbol].copy()
     if df_sym.empty:
-        raise RuntimeError(f"No data for {symbol} in {INPUT_FILE}")
+        print(f"No data for {symbol} in {input_file}")
+        return
 
     df_sym = df_sym.sort_index()
 
@@ -488,7 +494,7 @@ def main():
         )
         if sell_setup is not None:
             hod_idx = sell_setup["hod_idx"]
-            choch_idx = sell_setup["choch_idx"] # Signal Kerze
+            choch_idx = sell_setup["choch_idx"] 
             
             if hod_idx in df_sym.index:
                 df_sym.loc[hod_idx, "sell_signal_top"] = True
@@ -507,7 +513,7 @@ def main():
         )
         if buy_setup is not None:
             lod_idx = buy_setup["lod_idx"]
-            choch_idx = buy_setup["choch_idx"] # Signal Kerze
+            choch_idx = buy_setup["choch_idx"]
             
             if lod_idx in df_sym.index:
                 df_sym.loc[lod_idx, "buy_signal_bottom"] = True
@@ -517,21 +523,27 @@ def main():
 
     print(f"Total setups found: {len(setups)}")
 
-    print(f"Saving bars with signals to {OUTPUT_BARS_FILE} ...")
-    df_sym.to_csv(OUTPUT_BARS_FILE, index=True)
+    print(f"Saving bars with signals to {output_bars_file} ...")
+    df_sym.to_csv(output_bars_file, index=True)
     
     if setups:
         df_setups = pd.DataFrame(setups)
         for col in [c for c in df_setups.columns if c.endswith("_time") or c.endswith("_idx")]:
-            # Versuche, Zeitspalten lesbar zu machen, falls es Timestamps sind
             try:
                 df_setups[col] = pd.to_datetime(df_setups[col]).dt.strftime("%Y-%m-%d %H:%M:%S")
             except:
                 pass
-        print(f"Saving setups summary to {OUTPUT_SETUPS_FILE} ...")
-        df_setups.to_csv(OUTPUT_SETUPS_FILE, index=False)
+        print(f"Saving setups summary to {output_setups_file} ...")
+        df_setups.to_csv(output_setups_file, index=False)
     else:
         print("No setups found, no setups CSV written.")
+    
+    print(f"Done for {symbol}.\n")
+
+
+def main():
+    for sym in SYMBOLS:
+        run_phase2_micro_for_symbol(sym)
 
 
 if __name__ == "__main__":

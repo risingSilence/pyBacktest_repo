@@ -1,28 +1,15 @@
 import os
 import pandas as pd
-from datetime import datetime
 
 # ---------------------------------
 # CONFIG
 # ---------------------------------
 
-# Symbol, für das die Phase0b-Anreicherung laufen soll
-SYMBOL = "EURUSD"
+# Liste der Symbole
+SYMBOLS = ["EURUSD", "GBPUSD"]
 
 # Pfade
 DATA_DIR = "data"
-
-# Input: Output von phase0a (jetzt ohne Datum im Namen)
-INPUT_FILENAME = f"data_{SYMBOL}_M5_phase0.csv"
-INPUT_FILE = os.path.join(DATA_DIR, INPUT_FILENAME)
-
-# Output: Phase0b Output (ebenfalls generisch)
-OUTPUT_FILENAME = f"data_{SYMBOL}_M5_phase0_enriched.csv"
-OUTPUT_FILE = os.path.join(DATA_DIR, OUTPUT_FILENAME)
-
-# Beispiel für den Print-Check am Ende
-SAMPLE_SYMBOL = SYMBOL
-SAMPLE_DAY = "2025-02-03"
 
 
 # ---------------------------------
@@ -36,7 +23,6 @@ def load_data(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
 
     # time_ny wieder zum Index machen (so hieß der Index im Original)
-    # Falls die Spalte anders heißt, einmal kurz df.head() anschauen.
     if "time_ny" in df.columns:
         df["time_ny"] = pd.to_datetime(df["time_ny"])
         df = df.set_index("time_ny")
@@ -192,47 +178,30 @@ def save_data(df: pd.DataFrame, path: str) -> None:
 
 
 # ---------------------------------
-# SIMPLE QUALITY CHECK
+# LOGIC WRAPPER
 # ---------------------------------
 
-def print_sample_day(df: pd.DataFrame,
-                     symbol: str,
-                     day_str: str) -> None:
-    """
-    Drucke einen Ausschnitt eines Tages zum visuellen Check.
-    """
-    day = datetime.strptime(day_str, "%Y-%m-%d").date()
+def run_phase0b_for_symbol(symbol: str):
+    print(f"--- Processing Phase 0b for {symbol} ---")
 
-    if "date_ny" not in df.columns:
-        print("Column 'date_ny' not found in DataFrame.")
+    # Dateinamen dynamisch generieren
+    input_filename = f"data_{symbol}_M5_phase0.csv"
+    input_file = os.path.join(DATA_DIR, input_filename)
+
+    output_filename = f"data_{symbol}_M5_phase0_enriched.csv"
+    output_file = os.path.join(DATA_DIR, output_filename)
+
+    # Check ob Input existiert
+    if not os.path.exists(input_file):
+        print(f"Skipping {symbol}: Input file not found ({input_file})")
         return
 
-    sample = df[(df["symbol"] == symbol) & (df["date_ny"] == day)]
-
-    if sample.empty:
-        print(f"No data for {symbol} on {day_str}.")
-        return
-
-    print(f"\n=== SAMPLE FOR {symbol} ON {day_str} (NY time) ===")
-    cols = [
-        "symbol",
-        "open", "high", "low", "close",
-        "hour_ny", "minute_ny",
-        "is_london_session",
-        "is_ny_entry_window",
-        "day_high", "day_low",
-        "london_high", "london_low",
-        "has_london_range",
-        "is_day_high_bar", "is_day_low_bar",
-        "is_london_high_bar", "is_london_low_bar",
-        "has_broken_london_high", "has_broken_london_low",
-    ]
-
-    cols = [c for c in cols if c in sample.columns]
-
-    print(sample[cols].head(50))
-    print("...")
-    print(sample[cols].tail(10))
+    # Pipeline ausführen
+    df = load_data(input_file)
+    df_enriched = add_hod_lod_flags(df)
+    save_data(df_enriched, output_file)
+    
+    print(f"Done for {symbol}.\n")
 
 
 # ---------------------------------
@@ -240,10 +209,8 @@ def print_sample_day(df: pd.DataFrame,
 # ---------------------------------
 
 def main():
-    df = load_data(INPUT_FILE)
-    df_enriched = add_hod_lod_flags(df)
-    save_data(df_enriched, OUTPUT_FILE)
-    print_sample_day(df_enriched, SAMPLE_SYMBOL, SAMPLE_DAY)
+    for sym in SYMBOLS:
+        run_phase0b_for_symbol(sym)
 
 
 if __name__ == "__main__":
