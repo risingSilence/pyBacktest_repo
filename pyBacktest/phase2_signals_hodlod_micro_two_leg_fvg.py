@@ -11,7 +11,7 @@ import numpy as np
 SYMBOL = "EURUSD"
 
 # Setup-Name für Dateinamen
-SETUP_NAME = "hodlod_one_leg_choch_fvg"
+SETUP_NAME = "hodlod_micro_two_leg_fvg"
 
 # TIME FRAME KONFIGURATION
 SETUP_TF = "M5"              # Der Timeframe, auf dem wir suchen
@@ -140,7 +140,7 @@ def _scan_bull_fvgs_for_leg(highs, lows, start_pos: int, end_pos: int, pip_size:
 
 
 # ---------------------------------
-# SELL-Setup: HOD (HH) -> Break of prev HL (Close)
+# SELL-Setup: HOD (HH) -> LL1 -> CHOCH (Close < LL1)
 # ---------------------------------
 
 def find_sell_setup_for_day(df_sym: pd.DataFrame,
@@ -151,10 +151,10 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                             lows,
                             pip_size: float):
     """
-    SELL-Setup (HOD-Seite, One Leg - Direct Break).
-    Struktur: HOD gefunden -> Suche letztes Swing Low davor (HL).
-    Trigger: Close < prev_HL.
-    Validierung: Range & FVG im Drop.
+    SELL-Setup (HOD-Seite, One Leg).
+    Struktur: HOD -> LL1. 
+    Trigger: Close < LL1 Low (Strict).
+    Validierung: Range HOD-LL1 & FVG in Leg 1.
     """
 
     min_range = MIN_RANGE[symbol]
@@ -165,9 +165,10 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
     anchor_hh_idx = None
     anchor_hh_row = None
     anchor_hh_high = None
-    
-    # Das Level, das gebrochen werden muss (letztes HL vor dem HOD)
-    break_level = None
+
+    ll1_idx = None
+    ll1_row = None
+    ll1_low = None
 
     for idx, row in df_day.iterrows():
         minute = int(row["minute_of_day"])
@@ -178,140 +179,117 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
             and bool(row.get("is_day_high_bar", False))
             and NY_START_HOD_LOD <= minute <= NY_END_HOD_LOD
         ):
-            # Neuer potenzieller Anker gefunden
+            anchor_hh_idx = idx
+            anchor_hh_row = row
+            anchor_hh_high = float(row["high"])
             
-            # --- RÜCKWÄRTSSUCHE NACH DEM VORIGEN HL ---
-            # Wir nutzen df_sym und idx_to_pos, um effizient zurückzuschauen
-            pos_hod = idx_to_pos.get(idx)
-            if pos_hod is None: continue
-            
-            # Suche rückwärts ab pos_hod - 1 nach einem Swing Low
-            found_hl_price = None
-            
-            # Limitieren wir den Lookback auf z.B. 500 Bars, um nicht ewig zu suchen
-            # (In M5 sind 500 Bars ca 2 Tage, das sollte reichen für Struktur)
-            start_search = max(0, pos_hod - 500)
-            
-            # Slice holen (wir brauchen Swing Labels)
-            # Achtung: df_sym ist groß, wir iterieren lieber über Indizes rückwärts
-            # Wir greifen direkt auf die Spalte zu, um Speed zu haben
-            # Da df_sym index=timestamp ist, nutzen wir iloc via pos
-            
-            # Wir iterieren manuell rückwärts:
-            for k in range(pos_hod - 1, start_search - 1, -1):
-                # Check label
-                # Wir holen das Label aus dem DataFrame an Position k
-                # Das ist performanter als .loc wenn wir den Integer Index k kennen
-                # (df_sym.iloc[k] ist Series)
-                
-                # Optimierung: Wir schauen nur, ob swing_low_label != "" ist.
-                # Wir akzeptieren HL, LL, L0 als "Struktur-Tief"
-                val = df_sym.iat[k, df_sym.columns.get_loc("swing_low_label")]
-                if val and isinstance(val, str) and val in ["HL", "LL", "L0", "L_eq"]:
-                    # Gefunden!
-                    found_hl_price = df_sym.iat[k, df_sym.columns.get_loc("swing_low_price")]
-                    break
-            
-            if found_hl_price is not None:
-                anchor_hh_idx = idx
-                anchor_hh_row = row
-                anchor_hh_high = float(row["high"])
-                break_level = float(found_hl_price)
-            else:
-                # Kein Struktur-Tief davor gefunden -> HOD ignorieren
-                anchor_hh_idx = None
-                break_level = None
-            
+            # Reset bei neuem Anker
+            ll1_idx = ll1_row = None
+            ll1_low = None
+
+        if anchor_hh_idx is None:
             continue
 
-        if anchor_hh_idx is None or break_level is None:
-            continue
-
-        # 2) TRIGGER: Close unter break_level
-        # Wir sind zeitlich NACH dem HOD (durch Loop-Struktur garantiert)
-        
-        if minute >= NY_SIGNAL_CUTOFF:
-            # Zu spät -> Setup verwerfen
-            anchor_hh_idx = None
-            break_level = None
-            continue
-
-        close_price = float(row["close"])
-        
-        if close_price < break_level:
-            # --- SIGNAL: CHOCH ---
+        # 2) LL1: Erstes Swing Low nach dem Anker
+        if ll1_idx is None and row.get("swing_low_label") == "LL" and idx > anchor_hh_idx:
+            # Validierung des Beins (HOD -> LL1) BEVOR wir auf CHOCH warten
+            # Das spart Rechenzeit und filtert "schlechte" Legs früh raus.
             
-            # London Low Check (Hard Filter)
-            if "has_broken_london_low" in df_day.columns:
-                val = row.get("has_broken_london_low")
-                if pd.notna(val) and bool(val):
-                    anchor_hh_idx = None
-                    break_level = None
-                    continue
-
-            # Validierung: Range & FVG checken
-            # Range: HOD bis Low der Signal-Kerze (oder Break-Level?)
-            # Wir nehmen HOD bis aktuelles Low, da das der Move ist.
-            current_low = float(row["low"])
-            range_price = anchor_hh_high - current_low
+            # A) Range Check
+            range_price = anchor_hh_high - float(row["low"])
             range_pips = range_price / pip_size
             
             if range_pips < min_range:
-                # Range zu klein -> weitersuchen (vllt kommt später noch ein Break tiefer?)
-                # Aber hier ist es ein "Event": Der erste Close drunter zählt.
-                # Wenn der zu klein ist, ist das Setup meist invalid.
-                anchor_hh_idx = None
+                # Leg zu klein -> Setup verwerfen (warten auf neuen Anker)
+                # (Streng genommen könnte man warten ob noch ein tieferes LL kommt,
+                # aber im "First Swing"-Ansatz ist das LL1 fix).
+                # Wir resetten hier den Anker NICHT zwingend, vllt kommt noch ein besseres LL?
+                # Aber per Definition "First Swing Low" ist das hier LL1.
+                # Wenn das zu klein ist, ist das Setup tot für diesen HOD.
+                anchor_hh_idx = None # Reset, da Struktur kaputt (zu klein)
                 continue
 
-            # FVG Check (HOD bis Current Candle)
-            signal_idx = idx
+            # B) FVG Check
             pos_hod = idx_to_pos[anchor_hh_idx]
-            pos_signal = idx_to_pos[signal_idx]
-            
-            sizes_leg1 = _scan_bear_fvgs_for_leg(highs, lows, pos_hod, pos_signal, pip_size)
+            pos_ll1 = idx_to_pos[idx]
+            sizes_leg1 = _scan_bear_fvgs_for_leg(highs, lows, pos_hod, pos_ll1, pip_size)
             
             if not sizes_leg1 or max(sizes_leg1) < min_single:
+                # Kein ausreichendes FVG -> Setup tot für diesen HOD
                 anchor_hh_idx = None
                 continue
             
-            # Alles valide -> Setup erstellen
-            signal_end_ts = pd.Timestamp(signal_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
+            # Leg ist valide -> Speichern
+            ll1_idx = idx
+            ll1_row = row
+            ll1_low = float(row["low"])
+            continue
 
-            return {
-                "direction": "sell",
-                "symbol": symbol,
-                "date_ny": df_day["date_ny"].iloc[0],
-                "signal_tf": SETUP_TF,
-                "signal_start_time": anchor_hh_idx,
-                "signal_end_time": signal_end_ts,
+        # 3) CHOCH Trigger: Close STRIKT unter LL1
+        if ll1_idx is not None and idx > ll1_idx:
+            # Cutoff Zeit prüfen
+            if minute >= NY_SIGNAL_CUTOFF:
+                # Zu spät -> Setup verwerfen
+                anchor_hh_idx = None
+                ll1_idx = None
+                continue
 
-                # Wichtige Punkte
-                "hod_idx": anchor_hh_idx,
+            close_price = float(row["close"])
+            
+            if close_price < ll1_low:
+                # CHOCH! Setup validiert.
                 
-                # Wir mappen den "ll1_idx" auf die Signal-Kerze (Breakdown).
-                # Phase 3 scannt dann FVG von HOD bis hierher -> korrekt.
-                "ll1_idx": signal_idx, 
-                "choch_idx": signal_idx,
+                # London Low Check (Hard Filter)
+                if "has_broken_london_low" in df_day.columns:
+                    val = row.get("has_broken_london_low")
+                    if pd.notna(val) and bool(val):
+                        # London Low schon weg -> Invalid
+                        anchor_hh_idx = None # Reset
+                        ll1_idx = None
+                        continue
+
+                # Setup gefunden!
+                signal_idx = idx
                 
-                "hod_price": anchor_hh_high,
-                # ll1_price ist hier das Low der Breakdown-Kerze
-                "ll1_price": current_low, 
-                "choch_close_price": close_price,
+                # Werte für Output berechnen
+                range_price = anchor_hh_high - ll1_low
+                range_pips = range_price / pip_size
                 
-                # Meta für Debugging (welches HL wurde gebrochen?)
-                # Speichern wir optional, stört Phase 3 nicht
-                "break_level_price": break_level,
+                # FVG Infos nochmal holen (waren ja schon validiert, aber für Output)
+                pos_hod = idx_to_pos[anchor_hh_idx]
+                pos_ll1 = idx_to_pos[ll1_idx]
+                sizes_leg1 = _scan_bear_fvgs_for_leg(highs, lows, pos_hod, pos_ll1, pip_size)
                 
-                "range_pips": range_pips,
-                "fvg_max_leg1": max(sizes_leg1) if sizes_leg1 else 0.0,
-                "fvg_max_leg2": 0.0 
-            }
+                signal_end_ts = pd.Timestamp(signal_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
+
+                return {
+                    "direction": "sell",
+                    "symbol": symbol,
+                    "date_ny": df_day["date_ny"].iloc[0],
+                    "signal_tf": SETUP_TF,
+                    "signal_start_time": anchor_hh_idx,
+                    "signal_end_time": signal_end_ts,
+
+                    # Wichtige Punkte
+                    "hod_idx": anchor_hh_idx,
+                    "ll1_idx": ll1_idx,
+                    "choch_idx": signal_idx, # Signal Kerze
+                    
+                    "hod_price": anchor_hh_high,
+                    "ll1_price": ll1_low,
+                    "choch_close_price": close_price,
+                    
+                    "range_pips": range_pips,
+                    "fvg_max_leg1": max(sizes_leg1) if sizes_leg1 else 0.0,
+                    # Leg 2 gibt es nicht, setzen wir auf 0 oder leer
+                    "fvg_max_leg2": 0.0 
+                }
 
     return None
 
 
 # ---------------------------------
-# BUY-Setup: LOD (LL) -> Break of prev LH (Close)
+# BUY-Setup: LOD (LL) -> HH1 -> CHOCH (Close > HH1)
 # ---------------------------------
 
 def find_buy_setup_for_day(df_sym: pd.DataFrame,
@@ -322,9 +300,9 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
                            lows,
                            pip_size: float):
     """
-    BUY-Setup (LOD-Seite, One Leg - Direct Break).
-    Struktur: LOD gefunden -> Suche letztes Swing High davor (LH).
-    Trigger: Close > prev_LH.
+    BUY-Setup (LOD-Seite, One Leg).
+    Struktur: LOD -> HH1.
+    Trigger: Close > HH1 High (Strict).
     """
 
     min_range = MIN_RANGE[symbol]
@@ -335,8 +313,10 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
     anchor_ll_idx = None
     anchor_ll_row = None
     anchor_ll_low = None
-    
-    break_level = None
+
+    hh1_idx = None
+    hh1_row = None
+    hh1_high = None
 
     for idx, row in df_day.iterrows():
         minute = int(row["minute_of_day"])
@@ -347,93 +327,93 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
             and bool(row.get("is_day_low_bar", False))
             and NY_START_HOD_LOD <= minute <= NY_END_HOD_LOD
         ):
-            # Rückwärtssuche nach LH
-            pos_lod = idx_to_pos.get(idx)
-            if pos_lod is None: continue
+            anchor_ll_idx = idx
+            anchor_ll_row = row
+            anchor_ll_low = float(row["low"])
             
-            found_lh_price = None
-            start_search = max(0, pos_lod - 500)
-            
-            for k in range(pos_lod - 1, start_search - 1, -1):
-                val = df_sym.iat[k, df_sym.columns.get_loc("swing_high_label")]
-                if val and isinstance(val, str) and val in ["LH", "HH", "H0", "H_eq"]:
-                    found_lh_price = df_sym.iat[k, df_sym.columns.get_loc("swing_high_price")]
-                    break
-            
-            if found_lh_price is not None:
-                anchor_ll_idx = idx
-                anchor_ll_row = row
-                anchor_ll_low = float(row["low"])
-                break_level = float(found_lh_price)
-            else:
-                anchor_ll_idx = None
-                break_level = None
-            
+            hh1_idx = hh1_row = None
+            hh1_high = None
+
+        if anchor_ll_idx is None:
             continue
 
-        if anchor_ll_idx is None or break_level is None:
-            continue
-
-        # 2) TRIGGER: Close über break_level
-        if minute >= NY_SIGNAL_CUTOFF:
-            anchor_ll_idx = None
-            break_level = None
-            continue
+        # 2) HH1: Erstes Swing High nach dem Anker
+        if hh1_idx is None and row.get("swing_high_label") == "HH" and idx > anchor_ll_idx:
+            # Validierung Leg 1
             
-        close_price = float(row["close"])
-        
-        if close_price > break_level:
-            # --- SIGNAL ---
-            
-            if "has_broken_london_high" in df_day.columns:
-                val = row.get("has_broken_london_high")
-                if pd.notna(val) and bool(val):
-                    anchor_ll_idx = None
-                    break_level = None
-                    continue
-            
-            current_high = float(row["high"])
-            range_price = current_high - anchor_ll_low
+            # A) Range
+            range_price = float(row["high"]) - anchor_ll_low
             range_pips = range_price / pip_size
             
             if range_pips < min_range:
                 anchor_ll_idx = None 
                 continue
             
-            signal_idx = idx
+            # B) FVG
             pos_lod = idx_to_pos[anchor_ll_idx]
-            pos_signal = idx_to_pos[signal_idx]
-            
-            sizes_leg1 = _scan_bull_fvgs_for_leg(highs, lows, pos_lod, pos_signal, pip_size)
+            pos_hh1 = idx_to_pos[idx]
+            sizes_leg1 = _scan_bull_fvgs_for_leg(highs, lows, pos_lod, pos_hh1, pip_size)
             
             if not sizes_leg1 or max(sizes_leg1) < min_single:
                 anchor_ll_idx = None
                 continue
             
-            signal_end_ts = pd.Timestamp(signal_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
+            hh1_idx = idx
+            hh1_row = row
+            hh1_high = float(row["high"])
+            continue
 
-            return {
-                "direction": "buy",
-                "symbol": symbol,
-                "date_ny": df_day["date_ny"].iloc[0],
-                "signal_tf": SETUP_TF,
-                "signal_start_time": anchor_ll_idx,
-                "signal_end_time": signal_end_ts,
+        # 3) CHOCH Trigger: Close STRIKT über HH1
+        if hh1_idx is not None and idx > hh1_idx:
+            if minute >= NY_SIGNAL_CUTOFF:
+                anchor_ll_idx = None
+                hh1_idx = None
+                continue
+                
+            close_price = float(row["close"])
+            
+            if close_price > hh1_high:
+                # CHOCH!
+                
+                # London High Filter
+                if "has_broken_london_high" in df_day.columns:
+                    val = row.get("has_broken_london_high")
+                    if pd.notna(val) and bool(val):
+                        anchor_ll_idx = None
+                        hh1_idx = None
+                        continue
+                
+                signal_idx = idx
+                
+                range_price = hh1_high - anchor_ll_low
+                range_pips = range_price / pip_size
+                
+                pos_lod = idx_to_pos[anchor_ll_idx]
+                pos_hh1 = idx_to_pos[hh1_idx]
+                sizes_leg1 = _scan_bull_fvgs_for_leg(highs, lows, pos_lod, pos_hh1, pip_size)
+                
+                signal_end_ts = pd.Timestamp(signal_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
 
-                "lod_idx": anchor_ll_idx,
-                # Mapping hh1_idx auf Signal-Kerze
-                "hh1_idx": signal_idx,
-                "choch_idx": signal_idx,
-                
-                "lod_price": anchor_ll_low,
-                "hh1_price": current_high,
-                "choch_close_price": close_price,
-                "break_level_price": break_level,
-                
-                "range_pips": range_pips,
-                "fvg_max_leg1": max(sizes_leg1) if sizes_leg1 else 0.0,
-                "fvg_max_leg2": 0.0
-            }
+                return {
+                    "direction": "buy",
+                    "symbol": symbol,
+                    "date_ny": df_day["date_ny"].iloc[0],
+                    "signal_tf": SETUP_TF,
+                    "signal_start_time": anchor_ll_idx,
+                    "signal_end_time": signal_end_ts,
+
+                    "lod_idx": anchor_ll_idx,
+                    "hh1_idx": hh1_idx,
+                    "choch_idx": signal_idx,
+                    
+                    "lod_price": anchor_ll_low,
+                    "hh1_price": hh1_high,
+                    "choch_close_price": close_price,
+                    
+                    "range_pips": range_pips,
+                    "fvg_max_leg1": max(sizes_leg1) if sizes_leg1 else 0.0,
+                    "fvg_max_leg2": 0.0
+                }
     
     return None
 
