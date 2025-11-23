@@ -5,5 +5,5 @@ from datetime import datetime
 # ----------------------------------------------------------------
 
 # Zeitraum für die Berechnung (Filter)
-START_DATE_NY = datetime(2021, 1, 1)
+START_DATE_NY = datetime(2023, 1, 1)
 END_DATE_NY   = datetime(2025, 11, 8)

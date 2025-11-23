@@ -73,11 +73,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         phase2Select.addEventListener("change", async (e) => {
             phase2File = e.target.value || null;
             
+            // [PERSISTENCE] Speichern der Auswahl
+            if (phase2File) localStorage.setItem('chart_phase2_file', phase2File);
+
             // UI Update für P3 Dropdown triggern (Filterung anwenden)
             if (typeof updatePhase3DropdownUI === "function") {
                 updatePhase3DropdownUI();
                 // Da sich phase3File durch den Filter geändert haben könnte (Auto-Select),
                 // laden wir die (neue) Phase 3 Datei direkt mit.
+                
+                // [PERSISTENCE] Auch den potentiellen Auto-Select von P3 speichern
+                if (phase3File) localStorage.setItem('chart_phase3_file', phase3File);
+
                 await loadPhase3File(phase3File);
             }
 
@@ -91,6 +98,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (phase3Select) {
         phase3Select.addEventListener("change", async (e) => {
             phase3File = e.target.value || null;
+            
+            // [PERSISTENCE] Speichern der Auswahl
+            if (phase3File) localStorage.setItem('chart_phase3_file', phase3File);
+
             await loadPhase3File(phase3File);
             if (typeof rerenderCurrentViewWithPhases === "function") rerenderCurrentViewWithPhases();
             rebuildSetupsList();

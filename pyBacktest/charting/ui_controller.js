@@ -112,7 +112,29 @@ function updatePhaseDropdowns(newPhase2Files, newPhase3Files) {
     phase2Files = newPhase2Files || [];
     phase3Files = newPhase3Files || []; // Speichert ALLE P3 Dateien
     
-    const currentP2 = phase2File;
+    // --- PERSISTENCE RESTORE LOGIC START ---
+    // Wir schauen, ob wir einen gespeicherten Wert wiederherstellen können, 
+    // falls aktuell noch keiner gesetzt ist (z.B. beim Page Load).
+    
+    // 1. Phase 2
+    const storedP2 = localStorage.getItem('chart_phase2_file');
+    // Wenn phase2File leer ist, aber wir was im Storage haben das gültig ist -> setzen
+    if (!phase2File && storedP2 && phase2Files.includes(storedP2)) {
+        phase2File = storedP2;
+    }
+    // Fallback: Wenn immer noch null oder ungültig -> Erste Datei
+    if (!phase2File || !phase2Files.includes(phase2File)) {
+        phase2File = phase2Files.length > 0 ? phase2Files[0] : null;
+    }
+
+    // 2. Phase 3 (Pre-Set für updatePhase3DropdownUI)
+    // Wir setzen phase3File hier temporär, damit updatePhase3DropdownUI es als "currentSelection" erkennt.
+    // Die Validierung (passt die Datei zur Phase 2?) macht updatePhase3DropdownUI selbst.
+    const storedP3 = localStorage.getItem('chart_phase3_file');
+    if (!phase3File && storedP3) {
+        phase3File = storedP3;
+    }
+    // --- PERSISTENCE RESTORE LOGIC END ---
 
     // --- Phase 2 Dropdown ---
     p2Select.innerHTML = "";
@@ -124,16 +146,12 @@ function updatePhaseDropdowns(newPhase2Files, newPhase3Files) {
             const opt = document.createElement("option"); opt.value = fn; opt.textContent = fn; p2Select.appendChild(opt);
         });
         
-        // Falls aktuelle P2 Datei verschwindet -> Reset auf Erste
-        if (currentP2 && phase2Files.includes(currentP2)) {
-            phase2File = currentP2;
-        } else {
-            phase2File = phase2Files[0];
-        }
+        // Wert setzen (wurde oben durch Persistence oder Fallback bestimmt)
         p2Select.value = phase2File || "";
     }
 
     // --- Phase 3 Dropdown (Gefiltert) ---
+    // Das kümmert sich um den Rest (Validierung gegen Phase 2 + Auto-Select wenn nötig)
     updatePhase3DropdownUI();
 }
 
