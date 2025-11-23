@@ -1,4 +1,4 @@
-print("phase2_signals_hodlod_one_leg_choch_fvg.py - starting up...")
+print("phase2_signals_hodlod_micro_two_leg_fvg.py - starting up...")
 
 import pandas as pd
 import os
@@ -524,5 +524,5 @@ if __name__ == "__main__":
         main()
     except Exception:
         import traceback
-        print("ERROR in phase2_signals_hodlod_one_leg_choch_fvg.py:")
+        print("ERROR in phase2_signals_hodlod_micro_two_leg_fvg.py:")
         traceback.print_exc()
