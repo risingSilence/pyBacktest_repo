@@ -25,12 +25,25 @@ SCENARIO_ID = "limit_fvg2_london_2R"
 # Stats Output Config
 OVERWRITE_STATS_FILE = False  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
 
-# Target Risk-Reward Ratio (Standard)
-TARGET_RR = 2.8
+# --- TARGET RR CONFIG ---
+USE_GLOBAL_TARGET_RR = False  # True = nutze GLOBAL_TARGET_RR, False = nutze MAP
+GLOBAL_TARGET_RR = 2.8
+TARGET_RR_MAP = {
+    "AUDUSD": 2.8,
+    "EURUSD": 2.8,
+    "GBPUSD": 2.8,
+}
 
-# Near-TP Trailing:
+# --- NEAR-TP TRAILING CONFIG ---
 NEAR_TP_TRAILING_ENABLED = False
-NEAR_TP_TRIGGER_R = 1.75
+
+USE_GLOBAL_NEAR_TP_TRIGGER = False # True = nutze GLOBAL_..., False = nutze MAP
+GLOBAL_NEAR_TP_TRIGGER_R = 1.75
+NEAR_TP_TRIGGER_R_MAP = {
+    "AUDUSD": 1.75,
+    "EURUSD": 1.75,
+    "GBPUSD": 1.75,
+}
 
 # SL Buffer (in Pips) - Halbiert vs. altes Setup
 SL_BUFFER = { 
@@ -69,10 +82,6 @@ EXIT_SESSION_CLOSE_MINUTE = 0
 # Ab wann startet das BOS-Trailing (für exit_post_2pm_... Modi)
 BOS_TRAILING_START_HOUR = 14
 BOS_TRAILING_START_MINUTE = 0
-
-# --- INTERNAL CONSTANTS ---
-SQUEEZE_RISK_DIVISOR = TARGET_RR + 1 # NICHT ANFASSEN!!
-
 
 # ==============================================================================
 # 2. DERIVED CONFIG (DO NOT EDIT MANUALLY)
@@ -183,9 +192,18 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
     direction = setup_row["direction"]
     symbol = setup_row["symbol"]
     date_ny = setup_row["date_ny"]
-
     pip_size = PIP_SIZE_MAP.get(symbol)
     if pip_size is None: return None
+
+    # --- DYNAMIC RR & SQUEEZE LOGIC ---
+    if USE_GLOBAL_TARGET_RR:
+        target_rr = GLOBAL_TARGET_RR
+    else:
+        target_rr = TARGET_RR_MAP.get(symbol, GLOBAL_TARGET_RR)
+    
+    # Squeeze Divisor lokal berechnen (Konsistenz: RR + 1)
+    squeeze_divisor = target_rr + 1
+    # ----------------------------------
 
     # Config-Werte laden
     sl_buffer_pips = SL_BUFFER[symbol]
@@ -226,7 +244,7 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
 
         # London Squeeze / 2R Target
         risk = sl_price - entry_price
-        tp_2r = entry_price - TARGET_RR * risk
+        tp_2r = entry_price - target_rr * risk
 
         if tp_2r >= london_level:
             tp_price = tp_2r
@@ -234,7 +252,7 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
             # Squeeze: London Low ist Target
             dist = sl_price - london_level
             if dist <= 0: return None
-            new_risk = dist / SQUEEZE_RISK_DIVISOR
+            new_risk = dist / squeeze_divisor
             if (new_risk / pip_size) > max_sl_pips: return None # Squeeze erzwingt zu großen SL -> Skip
             entry_price = sl_price - new_risk
             tp_price = london_level
@@ -279,14 +297,14 @@ def build_entry_for_setup_scenario1(setup_row: pd.Series,
 
         # London Squeeze / 2R Target
         risk = entry_price - sl_price
-        tp_2r = entry_price + TARGET_RR * risk
+        tp_2r = entry_price + target_rr * risk
 
         if tp_2r <= london_level:
             tp_price = tp_2r
         else:
             dist = london_level - sl_price
             if dist <= 0: return None
-            new_risk = dist / SQUEEZE_RISK_DIVISOR
+            new_risk = dist / squeeze_divisor
             if (new_risk / pip_size) > max_sl_pips: return None
             entry_price = sl_price + new_risk
             tp_price = london_level
@@ -336,7 +354,13 @@ def _simulate_exit_phase(entry: EntrySpec, df_day: pd.DataFrame, entry_idx: Any,
     
     threshold_long, threshold_short = None, None
     if NEAR_TP_TRAILING_ENABLED and risk_sl_size_pips > 0:
-        d = NEAR_TP_TRIGGER_R * risk_sl_size_price
+        # Dynamischen Trigger holen
+        if USE_GLOBAL_NEAR_TP_TRIGGER:
+            trigger_r = GLOBAL_NEAR_TP_TRIGGER_R
+        else:
+            trigger_r = NEAR_TP_TRIGGER_R_MAP.get(entry.symbol, GLOBAL_NEAR_TP_TRIGGER_R)
+
+        d = trigger_r * risk_sl_size_price
         threshold_long, threshold_short = entry.entry_price + d, entry.entry_price - d
 
     has_sl_label = "swing_low_label" in df_day.columns
@@ -641,12 +665,16 @@ def run_phase3_two_legs_for_symbol(symbol: str):
         # 2. Config Meta
         def _fmt_time(h, m): return f"{h:02d}:{m:02d}"
         
+        # Resolve effective config for this symbol run
+        eff_rr = GLOBAL_TARGET_RR if USE_GLOBAL_TARGET_RR else TARGET_RR_MAP.get(symbol, GLOBAL_TARGET_RR)
+        eff_near_tp = GLOBAL_NEAR_TP_TRIGGER_R if USE_GLOBAL_NEAR_TP_TRIGGER else NEAR_TP_TRIGGER_R_MAP.get(symbol, GLOBAL_NEAR_TP_TRIGGER_R)
+
         config_meta = [
             ("cfg_symbol", symbol),
-            ("cfg_target_rr", TARGET_RR),
-            ("cfg_squeeze_divisor", SQUEEZE_RISK_DIVISOR),
+            ("cfg_target_rr", eff_rr),
+            ("cfg_squeeze_divisor", eff_rr + 1),
             ("cfg_near_tp_enabled", NEAR_TP_TRAILING_ENABLED),
-            ("cfg_near_tp_trigger_r", NEAR_TP_TRIGGER_R),
+            ("cfg_near_tp_trigger_r", eff_near_tp),
             ("cfg_sl_buffer_pips", SL_BUFFER.get(symbol, np.nan)),
             ("cfg_max_sl_pips", MAX_SL_SIZE.get(symbol, np.nan)),
             ("cfg_entry_cutoff_time", _fmt_time(ENTRY_CUTOFF_HOUR, ENTRY_CUTOFF_MINUTE)),
