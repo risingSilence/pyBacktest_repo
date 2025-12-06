@@ -16,7 +16,7 @@ except ImportError:
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 
 # Setup-Name für Dateinamen
 SETUP_NAME = "hodlod_micro_two_leg_fvg"

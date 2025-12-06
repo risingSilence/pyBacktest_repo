@@ -6,7 +6,7 @@ import pandas as pd
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 
 # Pfade
 DATA_DIR = "data"

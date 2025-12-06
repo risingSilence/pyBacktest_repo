@@ -11,7 +11,7 @@ import os
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 
 # WICHTIG: Muss exakt so heißen wie in deiner neuen Phase 2 Datei definiert!
 SETUP_NAME = "hodlod_one_leg_choch_fvg"

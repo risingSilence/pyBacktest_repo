@@ -9,7 +9,7 @@ from datetime import datetime
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 
 DATA_DIR = "data"
 

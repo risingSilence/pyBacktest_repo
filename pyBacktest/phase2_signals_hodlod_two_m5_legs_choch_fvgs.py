@@ -15,7 +15,7 @@ except ImportError:
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 
 # Setup-Name für Dateinamen (damit man im Frontend weiß, was es ist)
 SETUP_NAME = "hodlod_two_m5_legs_choch_fvgs"
