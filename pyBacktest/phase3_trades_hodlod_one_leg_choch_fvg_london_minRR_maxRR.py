@@ -11,7 +11,7 @@ import os
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
+SYMBOLS = ["AUDUSD"]#["EURUSD", "GBPUSD", "AUDUSD"]
 
 # WICHTIG: Muss exakt so heißen wie in deiner Phase 2 Datei definiert!
 SETUP_NAME = "hodlod_one_leg_choch_fvg" 
@@ -23,14 +23,14 @@ CHART_DATA_DIR = "charting/data"
 SCENARIO_ID = "london_target_min_max_rr"
 
 # Stats Output Config
-OVERWRITE_STATS_FILE = False  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
+OVERWRITE_STATS_FILE = True  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
 
 # --- MINIMUM RR CONFIG ---
 # Wenn Market-Entry dieses RR zum London-Target nicht erreicht, wird gesqueezed (Limit Entry).
 USE_GLOBAL_MIN_RR = False
 GLOBAL_MIN_RR = 3.0
 MIN_RR_MAP = {
-    "AUDUSD": 3.0,
+    "AUDUSD": 2.5,
     "EURUSD": 3.0,
     "GBPUSD": 4.0,
 }

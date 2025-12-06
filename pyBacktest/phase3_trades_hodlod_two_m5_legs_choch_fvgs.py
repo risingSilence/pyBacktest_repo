@@ -23,7 +23,7 @@ CHART_DATA_DIR = "charting/data"
 SCENARIO_ID = "limit_fvg2_london_2R"
 
 # Stats Output Config
-OVERWRITE_STATS_FILE = False  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
+OVERWRITE_STATS_FILE = True  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
 
 # --- TARGET RR CONFIG ---
 USE_GLOBAL_TARGET_RR = False  # True = nutze GLOBAL_TARGET_RR, False = nutze MAP
