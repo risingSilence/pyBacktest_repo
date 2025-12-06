@@ -30,7 +30,7 @@ OVERWRITE_STATS_FILE = False  # True = überschreiben, False = neue Datei (_1, _
 USE_GLOBAL_MIN_RR = False
 GLOBAL_MIN_RR = 3.0
 MIN_RR_MAP = {
-    "AUDUSD": 2.0,
+    "AUDUSD": 3.0,
     "EURUSD": 3.0,
     "GBPUSD": 4.0,
 }
