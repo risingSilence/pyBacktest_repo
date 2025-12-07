@@ -8,7 +8,7 @@ from config import PIP_SIZE_MAP # <--- NEU (wird für Pips-Berechnung benötigt)
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
+SYMBOLS = ["GBPUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # Pfade
 DATA_DIR = "data"
@@ -182,18 +182,46 @@ def save_data(df: pd.DataFrame, path: str) -> None:
 # VOLATILITY RATIO CALCULATION (NY AM SESSION)
 # ---------------------------------
 
+# ---------------------------------
+# VOLATILITY RATIO CALCULATION (NY AM SESSION)
+# ---------------------------------
+
+# ---------------------------------
+# VOLATILITY RATIO CALCULATION (NY AM SESSION)
+# ---------------------------------
+
 def calculate_and_save_volatility_ratios():
     """
     Calculates the average session range (Session High - Session Low) in Pips
-    between 08:00 and 12:00 NY Time for all symbols in SYMBOLS.
-    Normalizes the values relative to EURUSD (EURUSD = 1.0).
-    Saves the result as JSON.
+    between 08:00 and 12:00 NY Time.
+    
+    UPDATED LOGIC for incremental updates:
+    1. Loads existing raw ranges from 'volatility_raw_ranges_NY.json'.
+    2. Updates/Adds the currently processed SYMBOLS.
+    3. Saves the raw ranges back to disk.
+    4. Calculates Ratios relative to EURUSD based on the UPDATED full list.
+    5. Saves 'volatility_ratios_NY.json'.
     """
     print("\n--- Calculating Volatility Ratios (8am - 12pm NY Session Range) ---")
     
-    avg_ranges_pips = {}
+    # Updated filename with _NY suffix
+    raw_ranges_file = os.path.join(DATA_DIR, "volatility_raw_ranges_NY.json")
+    ratio_file = os.path.join(DATA_DIR, "volatility_ratios_NY.json")
     
-    # 1. Calculate average session ranges
+    # 1. Load existing raw data (database of absolute pip ranges)
+    avg_ranges_pips = {}
+    if os.path.exists(raw_ranges_file):
+        try:
+            with open(raw_ranges_file, "r") as f:
+                avg_ranges_pips = json.load(f)
+            print(f"Loaded existing raw ranges for {len(avg_ranges_pips)} symbols.")
+        except Exception as e:
+            print(f"WARN: Could not read existing raw ranges: {e}. Starting fresh.")
+            avg_ranges_pips = {}
+
+    # 2. Calculate/Update ranges for CURRENT symbols
+    current_run_symbols = []
+    
     for symbol in SYMBOLS:
         input_filename = f"data_{symbol}_M5_phase0.csv"
         input_file = os.path.join(DATA_DIR, input_filename)
@@ -204,11 +232,12 @@ def calculate_and_save_volatility_ratios():
             
         pip_size = PIP_SIZE_MAP.get(symbol, 0.0001)
         
-        # Load data
+        # Load data (Robust loading)
         try:
+            # Try loading only necessary columns first
             df = pd.read_csv(input_file, usecols=["time_ny", "high", "low"])
         except ValueError:
-            # Fallback if simplified loading fails
+            # Fallback if columns don't match exactly
             df = pd.read_csv(input_file)
             
         if "time_ny" not in df.columns:
@@ -225,7 +254,7 @@ def calculate_and_save_volatility_ratios():
             print(f"Warning: No NY AM data for {symbol}.")
             continue
         
-        # FIX: Calculate Session Range (Max High - Min Low per Day) instead of Avg Candle Size
+        # Calculate Session Range (Max High - Min Low per Day)
         df_session["date_temp"] = df_session["time_ny"].dt.date
         
         daily_session_stats = df_session.groupby("date_temp").agg({
@@ -239,17 +268,29 @@ def calculate_and_save_volatility_ratios():
         # Average of daily session ranges
         avg_range = daily_ranges.mean()
         
+        # Update our "Database"
         avg_ranges_pips[symbol] = avg_range
+        current_run_symbols.append(symbol)
         print(f"  {symbol}: Avg Session Range = {avg_range:.2f} pips")
 
-    # 2. Calculate Ratios (Relative to EURUSD)
+    # 3. Save updated raw ranges (Persistence step)
+    try:
+        with open(raw_ranges_file, "w") as f:
+            json.dump(avg_ranges_pips, f, indent=4)
+    except Exception as e:
+        print(f"ERROR saving raw ranges: {e}")
+
+    # 4. Calculate Ratios (Relative to EURUSD) using the FULL dataset
     if "EURUSD" not in avg_ranges_pips:
-        print("CRITICAL: EURUSD not found in data. Cannot calculate ratios.")
-        return
-        
-    base_vola = avg_ranges_pips["EURUSD"]
+        print("CRITICAL: EURUSD not found in raw data (neither current run nor history). Cannot calculate ratios.")
+        # We don't return here, we try to save what we have, but ratios will be 1.0 default
+        base_vola = 0
+    else:
+        base_vola = avg_ranges_pips["EURUSD"]
+
     ratios = {}
     
+    # Iterate over ALL known symbols in our database, not just the current run
     for symbol, val in avg_ranges_pips.items():
         if base_vola > 0:
             r = val / base_vola
@@ -257,13 +298,14 @@ def calculate_and_save_volatility_ratios():
         else:
             ratios[symbol] = 1.0
             
-    # 3. Save (Explicitly named NY version)
-    out_path = os.path.join(DATA_DIR, "volatility_ratios_NY.json")
-    with open(out_path, "w") as f:
+    # 5. Save final Ratios
+    with open(ratio_file, "w") as f:
         json.dump(ratios, f, indent=4)
         
-    print(f"Saved NY volatility ratios to {out_path}")
-    print(f"EURUSD Base Vola (NY AM Session): {base_vola:.2f} pips")
+    print(f"Saved merged NY volatility ratios to {ratio_file}")
+    print(f"Total symbols in file: {len(ratios)}")
+    if base_vola > 0:
+        print(f"EURUSD Base Vola: {base_vola:.2f} pips")
     print("-" * 30)
 
 # ---------------------------------
