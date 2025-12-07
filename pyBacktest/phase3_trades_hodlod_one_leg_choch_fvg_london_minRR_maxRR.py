@@ -5,13 +5,14 @@ from typing import Optional, Any, Dict, List
 import pandas as pd
 import numpy as np
 import os
+from config import PIP_SIZE_MAP
 
 # ==============================================================================
 # 1. CONFIGURATION & PARAMETERS
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
+SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # WICHTIG: Muss exakt so heißen wie in deiner Phase 2 Datei definiert!
 SETUP_NAME = "hodlod_one_leg_choch_fvg"
@@ -36,12 +37,17 @@ MIN_RR_MAP = {
     "EURUSD": 3.0,
     "GBPUSD": 4.0,
     "AUDUSD": 2.5,
-    "NZDUSD": 3.5,
-    "USDJPY": 3.0,
+    "NZDUSD": 3.0,
     "USDCAD": 3.0,
     "USDCHF": 3.0,
+    "USDJPY": 3.0,
     "GBPJPY": 3.0,
-    "EURGBP": 2.5,
+    "EURGBP": 3.0,
+    "DXY":    3.0,
+    "US30":   2.5, # Indizes scalping oft kleineres RR initial
+    "NAS100": 2.5,
+    "US500":  2.5,
+    "XAUUSD": 3.0,
 }
 
 # --- MAXIMUM RR CONFIG (NEU) ---
@@ -55,13 +61,17 @@ MAX_RR_MAP = {
     "GBPUSD": 10.0,
     "AUDUSD": 10.0,
     "NZDUSD": 10.0,
-    "USDJPY": 10.0,
     "USDCAD": 10.0,
     "USDCHF": 10.0,
+    "USDJPY": 10.0,
     "GBPJPY": 10.0,
     "EURGBP": 10.0,
+    "DXY": 10.0,
+    "US30": 10.0,
+    "NAS100": 10.0,
+    "US500": 10.0,
+    "XAUUSD": 10.0,
 }
-
 # --- NEAR-TP TRAILING CONFIG ---
 NEAR_TP_TRAILING_ENABLED = False
 
@@ -71,28 +81,21 @@ NEAR_TP_TRAILING_OFFSET_PCT = 0.10  # 10%
 
 
 # SL Buffer (in Pips)
-SL_BUFFER = { 
-    "EURUSD": 0.0, 
-    "GBPUSD": 0.0, 
-    "AUDUSD": 0.0, 
-    "NZDUSD": 0.0, 
-    "USDJPY": 0.0, 
-    "USDCAD": 0.0, 
-    "USDCHF": 0.0, 
-    "GBPJPY": 0.0, 
-    "EURGBP": 0.0, 
-}
-
-PIP_SIZE_MAP = {
-    "EURUSD": 0.0001,
-    "GBPUSD": 0.0001,
-    "AUDUSD": 0.0001,
-    "NZDUSD": 0.0001,
-    "USDJPY": 0.01,
-    "USDCAD": 0.0001,
-    "USDCHF": 0.0001,
-    "GBPJPY": 0.01,
-    "EURGBP": 0.0001,
+SL_BUFFER = {
+    "EURUSD": 0.0,
+    "GBPUSD": 0.0,
+    "AUDUSD": 0.0,
+    "NZDUSD": 0.0,
+    "USDCAD": 0.0,
+    "USDCHF": 0.0,
+    "USDJPY": 0.0,
+    "GBPJPY": 0.0,
+    "EURGBP": 0.0,
+    "DXY": 0.0,
+    "US30": 0.0,
+    "NAS100": 0.0,
+    "US500": 0.0,
+    "XAUUSD": 0.0,
 }
 
 # --- TIME SETTINGS (NEW YORK TIME) ---

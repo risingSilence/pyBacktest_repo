@@ -4,11 +4,13 @@ import pandas as pd
 import os
 import numpy as np
 try:
-    from config import START_DATE_NY, END_DATE_NY
+    from config import START_DATE_PHASE23, END_DATE_PHASE23, PIP_SIZE_MAP
+    START_DATE_NY = START_DATE_PHASE23
+    END_DATE_NY = END_DATE_PHASE23
 except ImportError:
     # Fallback, falls config.py nicht gefunden wird oder man es standalone testet
     from datetime import datetime
-    print("WARN: config.py not found, using default dates.")
+    print("WARN: config.py or new phase 2/3 dates not found, using default dates.")
     START_DATE_NY = datetime(2025, 11, 1) # NUR FALLBACK!!!
     END_DATE_NY   = datetime(2025, 11, 8) # NUR FALLBACK!!!
 
@@ -17,7 +19,7 @@ except ImportError:
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
+SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # Setup-Name für Dateinamen
 SETUP_NAME = "hodlod_one_leg_choch_fvg"
@@ -36,42 +38,43 @@ CHART_DATA_DIR = "charting/data"   # Hierhin schreiben wir für die HTML
 # Parameter
 # WICHTIG - EURUSD ist der "ANKER" für andere Paare!
 # die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
-PIP_SIZE_MAP = {
-    "EURUSD": 0.0001,
-    "GBPUSD": 0.0001,
-    "AUDUSD": 0.0001,
-    "NZDUSD": 0.0001,
-    "USDJPY": 0.01,
-    "USDCAD": 0.0001,
-    "USDCHF": 0.0001,
-    "GBPJPY": 0.01,
-    "EURGBP": 0.0001,
-}
 
 # NEU: Reduzierte Range-Vorgaben (One Leg)
 MIN_RANGE = {
     "EURUSD": 7.0,
-    "GBPUSD": 7.5,
-    "AUDUSD": 6.2,
-    "NZDUSD": 5.3,
-    "USDJPY": 4.5,
-    "USDCAD": 7.3,
-    "USDCHF": 6.3,
-    "GBPJPY": 10.0,
-    "EURGBP": 3.6,
+    "GBPUSD": 8.8,
+    "AUDUSD": 5.3,
+    "NZDUSD": 4.7,
+    "USDCAD": 6.4,
+    "USDCHF": 5.8,
+    "USDJPY": 9.3,
+    "GBPJPY": 12.8,
+    "EURGBP": 4.1,
+    "DXY":    4.7,
+    "US30":   35.0,
+    "NAS100": 25.7,
+    "US500":  5.3,
+    "XAUUSD": 466.0,
 }
 
 # NEU: FVG Mindestgröße für das einzelne Leg
+# NEU: FVG Mindestgröße für das einzelne Leg
+# Basis: EURUSD = 0.5 (bei 60 Pips Range)
 MIN_SINGLE_FVG = {
     "EURUSD": 0.5,
-    "GBPUSD": 0.5,
+    "GBPUSD": 0.6,
     "AUDUSD": 0.4,
-    "NZDUSD": 0.4,
-    "USDJPY": 0.3,
+    "NZDUSD": 0.3,
     "USDCAD": 0.5,
-    "USDCHF": 0.5,
-    "GBPJPY": 0.7,
+    "USDCHF": 0.4,
+    "USDJPY": 0.7,
+    "GBPJPY": 0.9,
     "EURGBP": 0.3,
+    "DXY":    0.3,
+    "US30":   2.5,
+    "NAS100": 1.8,
+    "US500":  0.4,
+    "XAUUSD": 33.3,
 }
 
 # NY-Zeitfenster in Minuten seit 00:00

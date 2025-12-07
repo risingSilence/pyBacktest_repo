@@ -1,21 +1,16 @@
-print("phase1_structure_bos.py - starting up...")
-
 import pandas as pd
 import os
 from datetime import datetime
+from config import PIP_SIZE_MAP
 
 # ---------------------------------
 # CONFIG
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
+SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 DATA_DIR = "data"
-
-PIP_SIZE = 0.0001
-
-# ... (Rest der Config: LOOKBACK, MIN_SWING_PIPS usw. bleiben gleich)
 
 LEFT_LOOKBACK = 1
 RIGHT_LOOKFORWARD = 1
@@ -24,87 +19,115 @@ RIGHT_LOOKFORWARD = 1
 # WICHTIG - EURUSD ist der "ANKER" für andere Paare!
 # die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
 
+# Min. Swing-Amplitude für Pivots
 MIN_SWING_PIPS = {
     "EURUSD": 3.0,
-    "GBPUSD": 3.2,
-    "AUDUSD": 2.6,
-    "NZDUSD": 2.3,
-    "USDJPY": 1.9,
-    "USDCAD": 3.1,
-    "USDCHF": 2.7,
-    "GBPJPY": 4.3,
-    "EURGBP": 1.5,
+    "GBPUSD": 3.8,
+    "AUDUSD": 2.3,
+    "NZDUSD": 2.0,
+    "USDCAD": 2.8,
+    "USDCHF": 2.5,
+    "USDJPY": 4.0,
+    "GBPJPY": 5.5,
+    "EURGBP": 1.7,
+    "DXY":    2.0,
+    "US30":   15.0,
+    "NAS100": 11.0,
+    "US500":  2.3,
+    "XAUUSD": 200.0, 
 }
 
 SINGLE_COUNTER_ENGULFING = {
     "EURUSD": 4.0,
-    "GBPUSD": 4.3,
-    "AUDUSD": 3.5,
-    "NZDUSD": 3.0,
-    "USDJPY": 2.6,
-    "USDCAD": 4.2,
-    "USDCHF": 3.6,
-    "GBPJPY": 5.7,
-    "EURGBP": 2.0,
+    "GBPUSD": 5.0,
+    "AUDUSD": 3.0,
+    "NZDUSD": 2.7,
+    "USDCAD": 3.7,
+    "USDCHF": 3.3,
+    "USDJPY": 5.3,
+    "GBPJPY": 7.3,
+    "EURGBP": 2.3,
+    "DXY":    2.7,
+    "US30":   20.0,
+    "NAS100": 14.7,
+    "US500":  3.0,
+    "XAUUSD": 266.0,
 }
 
-# Pips für CHOCH-Erkennung
+# Pips für CHOCH-Erkennung (Strukturbruch)
 CHOCH_PIPS = {
     "EURUSD": 1.5,
-    "GBPUSD": 1.6,
-    "AUDUSD": 1.3,
-    "NZDUSD": 1.1,
-    "USDJPY": 1.0,
-    "USDCAD": 1.6,
-    "USDCHF": 1.4,
-    "GBPJPY": 2.2,
-    "EURGBP": 0.8,
+    "GBPUSD": 1.9,
+    "AUDUSD": 1.1,
+    "NZDUSD": 1.0,
+    "USDCAD": 1.4,
+    "USDCHF": 1.2,
+    "USDJPY": 2.0,
+    "GBPJPY": 2.7,
+    "EURGBP": 0.9,
+    "DXY":    1.0,
+    "US30":   7.5,
+    "NAS100": 5.5,
+    "US500":  1.1,
+    "XAUUSD": 100.0,
 }
 
-# Min. lookahead/lookforward skip pips (Hintertür),
-# separat definierbar (hier = CHOCH-Werte)
+# Min. lookahead/lookforward skip pips (Hintertür)
 SKIP_PIPS = {
     "EURUSD": 1.5,
-    "GBPUSD": 1.6,
-    "AUDUSD": 1.3,
-    "NZDUSD": 1.1,
-    "USDJPY": 1.0,
-    "USDCAD": 1.6,
-    "USDCHF": 1.4,
-    "GBPJPY": 2.2,
-    "EURGBP": 0.8,
+    "GBPUSD": 1.9,
+    "AUDUSD": 1.1,
+    "NZDUSD": 1.0,
+    "USDCAD": 1.4,
+    "USDCHF": 1.2,
+    "USDJPY": 2.0,
+    "GBPJPY": 2.7,
+    "EURGBP": 0.9,
+    "DXY":    1.0,
+    "US30":   7.5,
+    "NAS100": 5.5,
+    "US500":  1.1,
+    "XAUUSD": 100.0,
 }
 
 # ---------------------------------
 # Helpers
 # ---------------------------------
 
-def get_single_counter_engulfing_price(symbol: str) -> float:
-    base = get_base_pair(symbol)
-    return SINGLE_COUNTER_ENGULFING[base] * PIP_SIZE
+def _get_pip_size(symbol: str) -> float:
+    """Holt die PIP-Größe für das Symbol aus der importierten globalen Map."""
+    # Wir nehmen an, dass alle relevanten Symbole in der globalen PIP_SIZE_MAP
+    # definiert sind, um korrekte Price-Einheiten zu erhalten.
+    return PIP_SIZE_MAP.get(symbol, 0.0001)
 
 
 def get_base_pair(symbol: str) -> str:
-    # Wenn das Symbol direkt in der Map ist (z.B. "US30"), nimm es direkt
+    # Wir nehmen an, dass alle relevanten Symbole direkt in den Maps definiert sind.
+    # Wenn das Symbol direkt in MIN_SWING_PIPS ist, nimm es.
     if symbol in MIN_SWING_PIPS:
         return symbol
+    
+    # Ansonsten wird das Symbol selbst als Schlüssel zurückgegeben (erwartet in den Maps).
+    return symbol
 
-    # Fallback für Forex-Paare (falls du z.B. EURUSD_micro handelst)
-    for base in ["EURUSD", "GBPUSD", "AUDUSD"]:
-        if symbol.startswith(base):
-            return base
 
-    raise ValueError(f"Unknown base pair or config missing for symbol '{symbol}'")
+def get_single_counter_engulfing_price(symbol: str) -> float:
+    base = get_base_pair(symbol)
+    pip_size = _get_pip_size(base)
+    # SINGLE_COUNTER_ENGULFING ist in "Pips" definiert, muss also mit der PIP-Größe multipliziert werden
+    return SINGLE_COUNTER_ENGULFING[base] * pip_size
 
 
 def get_min_swing_price(symbol: str) -> float:
     base = get_base_pair(symbol)
-    return MIN_SWING_PIPS[base] * PIP_SIZE
+    pip_size = _get_pip_size(base)
+    return MIN_SWING_PIPS[base] * pip_size
 
 
 def get_choch_price(symbol: str) -> float:
     base = get_base_pair(symbol)
-    return CHOCH_PIPS[base] * PIP_SIZE
+    pip_size = _get_pip_size(base)
+    return CHOCH_PIPS[base] * pip_size
 
 
 def get_skip_price(symbol: str) -> float:
@@ -112,8 +135,8 @@ def get_skip_price(symbol: str) -> float:
     Min lookahead/lookforward skip pips (Hintertür) in Price-Einheiten.
     """
     base = get_base_pair(symbol)
-    return SKIP_PIPS[base] * PIP_SIZE
-
+    pip_size = _get_pip_size(base)
+    return SKIP_PIPS[base] * pip_size
 
 def merge_struct_points(*lists):
     """
