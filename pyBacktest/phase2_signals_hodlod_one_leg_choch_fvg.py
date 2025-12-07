@@ -17,7 +17,7 @@ except ImportError:
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
 
 # Setup-Name für Dateinamen
 SETUP_NAME = "hodlod_one_leg_choch_fvg"

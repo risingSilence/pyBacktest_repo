@@ -19,7 +19,7 @@ CSV_DIR = r"./dukascopy_m1"
 CSV_FILENAME_TEMPLATE = "{symbol}_{year}_M1.csv"
 
 # Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
 
 # Zeitraum in NEW YORK ZEIT
 START_DATE_NY = datetime(2021, 1, 1)

@@ -11,7 +11,7 @@ import os
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
 
 # WICHTIG: Muss exakt so heißen wie in deiner Phase 2 Datei definiert!
 SETUP_NAME = "hodlod_one_leg_choch_fvg"
@@ -35,7 +35,7 @@ GLOBAL_MIN_RR = 3.0
 MIN_RR_MAP = {
     "EURUSD": 3.0,
     "GBPUSD": 4.0,
-    "AUDUSD": 2.5,
+    "AUDUSD": 3.0,
     "NZDUSD": 3.0,
     "USDJPY": 3.0,
     "USDCAD": 3.0,
