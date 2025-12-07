@@ -184,19 +184,17 @@ def save_data(df: pd.DataFrame, path: str) -> None:
 
 def calculate_and_save_volatility_ratios():
     """
-    Berechnet die durchschnittliche Range (High - Low) in Pips
-    zwischen 08:00 und 12:00 NY Time für alle Symbole in SYMBOLS.
-    Normalisiert die Werte relativ zu EURUSD (EURUSD = 1.0).
-    Speichert das Ergebnis als JSON.
+    Calculates the average session range (Session High - Session Low) in Pips
+    between 08:00 and 12:00 NY Time for all symbols in SYMBOLS.
+    Normalizes the values relative to EURUSD (EURUSD = 1.0).
+    Saves the result as JSON.
     """
-    print("\n--- Calculating Volatility Ratios (8am - 12pm NY) ---")
+    print("\n--- Calculating Volatility Ratios (8am - 12pm NY Session Range) ---")
     
     avg_ranges_pips = {}
     
-    # 1. Durchschnittliche Ranges berechnen
+    # 1. Calculate average session ranges
     for symbol in SYMBOLS:
-        # Wir nutzen die enriched files oder die phase0 files.
-        # Phase0 files reichen, da wir nur High/Low/Time brauchen.
         input_filename = f"data_{symbol}_M5_phase0.csv"
         input_file = os.path.join(DATA_DIR, input_filename)
         
@@ -206,11 +204,11 @@ def calculate_and_save_volatility_ratios():
             
         pip_size = PIP_SIZE_MAP.get(symbol, 0.0001)
         
-        # Load data (nur notwendige Spalten für Speed)
+        # Load data
         try:
             df = pd.read_csv(input_file, usecols=["time_ny", "high", "low"])
         except ValueError:
-            # Falls time_ny nicht gefunden wird (altes Format?), komplett laden
+            # Fallback if simplified loading fails
             df = pd.read_csv(input_file)
             
         if "time_ny" not in df.columns:
@@ -219,23 +217,32 @@ def calculate_and_save_volatility_ratios():
             
         df["time_ny"] = pd.to_datetime(df["time_ny"])
         
-        # Filter: Nur 08:00 bis 11:55 (Kerzen die im 8-12 Fenster liegen)
-        # Hour 8, 9, 10, 11. (12:00 ist meist die erste Kerze NACH dem Fenster)
+        # Filter: Only 08:00 to 11:55 (Candles within the 8-12 window)
         mask_ny_am = df["time_ny"].dt.hour.isin([8, 9, 10, 11])
         df_session = df.loc[mask_ny_am].copy()
         
         if df_session.empty:
             print(f"Warning: No NY AM data for {symbol}.")
             continue
-            
-        # Range in Pips
-        ranges = (df_session["high"] - df_session["low"]) / pip_size
-        avg_range = ranges.mean()
+        
+        # FIX: Calculate Session Range (Max High - Min Low per Day) instead of Avg Candle Size
+        df_session["date_temp"] = df_session["time_ny"].dt.date
+        
+        daily_session_stats = df_session.groupby("date_temp").agg({
+            "high": "max",
+            "low": "min"
+        })
+        
+        # Calculate range per day in pips
+        daily_ranges = (daily_session_stats["high"] - daily_session_stats["low"]) / pip_size
+        
+        # Average of daily session ranges
+        avg_range = daily_ranges.mean()
         
         avg_ranges_pips[symbol] = avg_range
-        print(f"  {symbol}: Avg Range = {avg_range:.2f} pips")
+        print(f"  {symbol}: Avg Session Range = {avg_range:.2f} pips")
 
-    # 2. Ratios berechnen (Relativ zu EURUSD)
+    # 2. Calculate Ratios (Relative to EURUSD)
     if "EURUSD" not in avg_ranges_pips:
         print("CRITICAL: EURUSD not found in data. Cannot calculate ratios.")
         return
@@ -250,15 +257,14 @@ def calculate_and_save_volatility_ratios():
         else:
             ratios[symbol] = 1.0
             
-    # 3. Speichern (Explizit als NY Version benannt)
+    # 3. Save (Explicitly named NY version)
     out_path = os.path.join(DATA_DIR, "volatility_ratios_NY.json")
     with open(out_path, "w") as f:
         json.dump(ratios, f, indent=4)
         
     print(f"Saved NY volatility ratios to {out_path}")
-    print(f"EURUSD Base Vola (NY AM): {base_vola:.2f} pips")
+    print(f"EURUSD Base Vola (NY AM Session): {base_vola:.2f} pips")
     print("-" * 30)
-
 
 # ---------------------------------
 # LOGIC WRAPPER
