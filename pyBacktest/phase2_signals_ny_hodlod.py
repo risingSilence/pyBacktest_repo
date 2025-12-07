@@ -21,7 +21,7 @@ except ImportError:
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
+SYMBOLS = ["EURUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # Setup-Name für Dateinamen (VEREINFACHT)
 SETUP_NAME = "ny_hodlod"

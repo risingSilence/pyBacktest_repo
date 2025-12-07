@@ -9,7 +9,7 @@ from config import PIP_SIZE_MAP
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
+SYMBOLS = ["EURUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 DATA_DIR = "data"
 
@@ -50,12 +50,6 @@ def load_vola_ratio(symbol: str) -> float:
     except Exception as e:
         print(f"ERROR reading ratio file: {e}. Defaulting to 1.0.")
         return 1.0
-
-def _get_pip_size(symbol: str) -> float:
-    """Holt die PIP-Größe für das Symbol aus der importierten globalen Map."""
-    # Wir nehmen an, dass alle relevanten Symbole in der globalen PIP_SIZE_MAP
-    # definiert sind, um korrekte Price-Einheiten zu erhalten.
-    return PIP_SIZE_MAP.get(symbol, 0.0001)
 
 def merge_struct_points(*lists):
     """
