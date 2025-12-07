@@ -1,5 +1,7 @@
 import os
 import pandas as pd
+import json  # <--- NEU
+from config import PIP_SIZE_MAP # <--- NEU (wird für Pips-Berechnung benötigt)
 
 # ---------------------------------
 # CONFIG
@@ -176,6 +178,87 @@ def save_data(df: pd.DataFrame, path: str) -> None:
     df.to_csv(path, index=True)
     print("Done.")
 
+# ---------------------------------
+# VOLATILITY RATIO CALCULATION (NY AM SESSION)
+# ---------------------------------
+
+def calculate_and_save_volatility_ratios():
+    """
+    Berechnet die durchschnittliche Range (High - Low) in Pips
+    zwischen 08:00 und 12:00 NY Time für alle Symbole in SYMBOLS.
+    Normalisiert die Werte relativ zu EURUSD (EURUSD = 1.0).
+    Speichert das Ergebnis als JSON.
+    """
+    print("\n--- Calculating Volatility Ratios (8am - 12pm NY) ---")
+    
+    avg_ranges_pips = {}
+    
+    # 1. Durchschnittliche Ranges berechnen
+    for symbol in SYMBOLS:
+        # Wir nutzen die enriched files oder die phase0 files.
+        # Phase0 files reichen, da wir nur High/Low/Time brauchen.
+        input_filename = f"data_{symbol}_M5_phase0.csv"
+        input_file = os.path.join(DATA_DIR, input_filename)
+        
+        if not os.path.exists(input_file):
+            print(f"Skipping {symbol} for vola calc: File not found.")
+            continue
+            
+        pip_size = PIP_SIZE_MAP.get(symbol, 0.0001)
+        
+        # Load data (nur notwendige Spalten für Speed)
+        try:
+            df = pd.read_csv(input_file, usecols=["time_ny", "high", "low"])
+        except ValueError:
+            # Falls time_ny nicht gefunden wird (altes Format?), komplett laden
+            df = pd.read_csv(input_file)
+            
+        if "time_ny" not in df.columns:
+            print(f"Skipping {symbol}: No 'time_ny' column.")
+            continue
+            
+        df["time_ny"] = pd.to_datetime(df["time_ny"])
+        
+        # Filter: Nur 08:00 bis 11:55 (Kerzen die im 8-12 Fenster liegen)
+        # Hour 8, 9, 10, 11. (12:00 ist meist die erste Kerze NACH dem Fenster)
+        mask_ny_am = df["time_ny"].dt.hour.isin([8, 9, 10, 11])
+        df_session = df.loc[mask_ny_am].copy()
+        
+        if df_session.empty:
+            print(f"Warning: No NY AM data for {symbol}.")
+            continue
+            
+        # Range in Pips
+        ranges = (df_session["high"] - df_session["low"]) / pip_size
+        avg_range = ranges.mean()
+        
+        avg_ranges_pips[symbol] = avg_range
+        print(f"  {symbol}: Avg Range = {avg_range:.2f} pips")
+
+    # 2. Ratios berechnen (Relativ zu EURUSD)
+    if "EURUSD" not in avg_ranges_pips:
+        print("CRITICAL: EURUSD not found in data. Cannot calculate ratios.")
+        return
+        
+    base_vola = avg_ranges_pips["EURUSD"]
+    ratios = {}
+    
+    for symbol, val in avg_ranges_pips.items():
+        if base_vola > 0:
+            r = val / base_vola
+            ratios[symbol] = round(r, 4)
+        else:
+            ratios[symbol] = 1.0
+            
+    # 3. Speichern
+    out_path = os.path.join(DATA_DIR, "volatility_ratios.json")
+    with open(out_path, "w") as f:
+        json.dump(ratios, f, indent=4)
+        
+    print(f"Saved volatility ratios to {out_path}")
+    print(f"EURUSD Base Vola: {base_vola:.2f} pips")
+    print("-" * 30)
+
 
 # ---------------------------------
 # LOGIC WRAPPER
@@ -209,8 +292,12 @@ def run_phase0b_for_symbol(symbol: str):
 # ---------------------------------
 
 def main():
+    # 1. Anreichern (wie bisher)
     for sym in SYMBOLS:
         run_phase0b_for_symbol(sym)
+        
+    # 2. Volatilitäts-Analyse & Ratio-File erstellen
+    calculate_and_save_volatility_ratios()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import json # <--- NEU
 from datetime import datetime
 from config import PIP_SIZE_MAP
 
@@ -19,124 +20,40 @@ RIGHT_LOOKFORWARD = 1
 # WICHTIG - EURUSD ist der "ANKER" für andere Paare!
 # die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
 
-# Min. Swing-Amplitude für Pivots
-MIN_SWING_PIPS = {
-    "EURUSD": 3.0,
-    "GBPUSD": 3.8,
-    "AUDUSD": 2.3,
-    "NZDUSD": 2.0,
-    "USDCAD": 2.8,
-    "USDCHF": 2.5,
-    "USDJPY": 4.0,
-    "GBPJPY": 5.5,
-    "EURGBP": 1.7,
-    "DXY":    2.0,
-    "US30":   15.0,
-    "NAS100": 11.0,
-    "US500":  2.3,
-    "XAUUSD": 200.0, 
-}
+# ---------------------------------
+# BASE CONFIG (EURUSD BASELINE)
+# ---------------------------------
+# Diese Werte gelten für EURUSD (Ratio 1.0). 
+# Alle anderen Assets werden basierend auf 'data/volatility_ratios.json' skaliert.
 
-SINGLE_COUNTER_ENGULFING = {
-    "EURUSD": 4.0,
-    "GBPUSD": 5.0,
-    "AUDUSD": 3.0,
-    "NZDUSD": 2.7,
-    "USDCAD": 3.7,
-    "USDCHF": 3.3,
-    "USDJPY": 5.3,
-    "GBPJPY": 7.3,
-    "EURGBP": 2.3,
-    "DXY":    2.7,
-    "US30":   20.0,
-    "NAS100": 14.7,
-    "US500":  3.0,
-    "XAUUSD": 266.0,
-}
-
-# Pips für CHOCH-Erkennung (Strukturbruch)
-CHOCH_PIPS = {
-    "EURUSD": 1.5,
-    "GBPUSD": 1.9,
-    "AUDUSD": 1.1,
-    "NZDUSD": 1.0,
-    "USDCAD": 1.4,
-    "USDCHF": 1.2,
-    "USDJPY": 2.0,
-    "GBPJPY": 2.7,
-    "EURGBP": 0.9,
-    "DXY":    1.0,
-    "US30":   7.5,
-    "NAS100": 5.5,
-    "US500":  1.1,
-    "XAUUSD": 100.0,
-}
-
-# Min. lookahead/lookforward skip pips (Hintertür)
-SKIP_PIPS = {
-    "EURUSD": 1.5,
-    "GBPUSD": 1.9,
-    "AUDUSD": 1.1,
-    "NZDUSD": 1.0,
-    "USDCAD": 1.4,
-    "USDCHF": 1.2,
-    "USDJPY": 2.0,
-    "GBPJPY": 2.7,
-    "EURGBP": 0.9,
-    "DXY":    1.0,
-    "US30":   7.5,
-    "NAS100": 5.5,
-    "US500":  1.1,
-    "XAUUSD": 100.0,
-}
+BASE_MIN_SWING_PIPS = 3.0
+BASE_SINGLE_COUNTER_ENGULFING = 4.0
+BASE_CHOCH_PIPS = 1.5
+BASE_SKIP_PIPS = 1.5
 
 # ---------------------------------
 # Helpers
 # ---------------------------------
+
+def load_vola_ratio(symbol: str) -> float:
+    ratio_file = os.path.join(DATA_DIR, "volatility_ratios.json")
+    if not os.path.exists(ratio_file):
+        print(f"WARN: {ratio_file} not found. Defaulting to 1.0 ratio.")
+        return 1.0
+    
+    try:
+        with open(ratio_file, "r") as f:
+            data = json.load(f)
+        return data.get(symbol, 1.0) # Default 1.0 wenn Symbol neu/unbekannt
+    except Exception as e:
+        print(f"ERROR reading ratio file: {e}. Defaulting to 1.0.")
+        return 1.0
 
 def _get_pip_size(symbol: str) -> float:
     """Holt die PIP-Größe für das Symbol aus der importierten globalen Map."""
     # Wir nehmen an, dass alle relevanten Symbole in der globalen PIP_SIZE_MAP
     # definiert sind, um korrekte Price-Einheiten zu erhalten.
     return PIP_SIZE_MAP.get(symbol, 0.0001)
-
-
-def get_base_pair(symbol: str) -> str:
-    # Wir nehmen an, dass alle relevanten Symbole direkt in den Maps definiert sind.
-    # Wenn das Symbol direkt in MIN_SWING_PIPS ist, nimm es.
-    if symbol in MIN_SWING_PIPS:
-        return symbol
-    
-    # Ansonsten wird das Symbol selbst als Schlüssel zurückgegeben (erwartet in den Maps).
-    return symbol
-
-
-def get_single_counter_engulfing_price(symbol: str) -> float:
-    base = get_base_pair(symbol)
-    pip_size = _get_pip_size(base)
-    # SINGLE_COUNTER_ENGULFING ist in "Pips" definiert, muss also mit der PIP-Größe multipliziert werden
-    return SINGLE_COUNTER_ENGULFING[base] * pip_size
-
-
-def get_min_swing_price(symbol: str) -> float:
-    base = get_base_pair(symbol)
-    pip_size = _get_pip_size(base)
-    return MIN_SWING_PIPS[base] * pip_size
-
-
-def get_choch_price(symbol: str) -> float:
-    base = get_base_pair(symbol)
-    pip_size = _get_pip_size(base)
-    return CHOCH_PIPS[base] * pip_size
-
-
-def get_skip_price(symbol: str) -> float:
-    """
-    Min lookahead/lookforward skip pips (Hintertür) in Price-Einheiten.
-    """
-    base = get_base_pair(symbol)
-    pip_size = _get_pip_size(base)
-    return SKIP_PIPS[base] * pip_size
 
 def merge_struct_points(*lists):
     """
@@ -1367,10 +1284,6 @@ def run_phase1_for_symbol(symbol: str):
     input_filename = f"data_{symbol}_M5_phase0_enriched.csv"
     input_file = os.path.join(DATA_DIR, input_filename)
 
-    # ALT:
-    # output_filename = f"data_{symbol}_M5_phase1_structure.csv"
-    
-    # NEU (Vorschlag):
     output_filename = f"data_{symbol}_M5_phase1_structure_NY.csv"
     output_file = os.path.join(DATA_DIR, output_filename)
 
@@ -1396,14 +1309,25 @@ def run_phase1_for_symbol(symbol: str):
 
     print(f"Rows for {symbol}: {len(df_sym)}")
 
-    # Parameter dynamisch für das aktuelle Symbol holen
-    min_swing_price = get_min_swing_price(symbol)
-    choch_price = get_choch_price(symbol)
-    skip_price = get_skip_price(symbol)
+    # --- DYNAMIC PARAMETER CALCULATION ---
+    pip_size = PIP_SIZE_MAP.get(symbol, 0.0001)
+    
+    # Load Volatility Ratio
+    vola_ratio = load_vola_ratio(symbol)
+    
+    # Calculate specific parameters
+    # Values are in PRICE units (Pips * PipSize * Ratio)
+    min_swing_price = BASE_MIN_SWING_PIPS * vola_ratio * pip_size
+    choch_price = BASE_CHOCH_PIPS * vola_ratio * pip_size
+    skip_price = BASE_SKIP_PIPS * vola_ratio * pip_size
+    sc_threshold_price = BASE_SINGLE_COUNTER_ENGULFING * vola_ratio * pip_size
 
-    print(f"Min swing amplitude (pivot):                 {min_swing_price}")
-    print(f"CHOCH price threshold (for BOS/CHOCH logic): {choch_price}")
-    print(f"Min lookahead/lookforward skip pips (price): {skip_price}")
+    print(f"Volatility Ratio (vs EURUSD): {vola_ratio:.4f}")
+    print(f"Min swing amplitude (pivot):                 {min_swing_price:.5f} ({BASE_MIN_SWING_PIPS * vola_ratio:.2f} pips)")
+    print(f"CHOCH price threshold:                       {choch_price:.5f} ({BASE_CHOCH_PIPS * vola_ratio:.2f} pips)")
+    print(f"Min lookahead skip:                          {skip_price:.5f} ({BASE_SKIP_PIPS * vola_ratio:.2f} pips)")
+    print(f"Counter Engulfing Threshold:                 {sc_threshold_price:.5f} ({BASE_SINGLE_COUNTER_ENGULFING * vola_ratio:.2f} pips)")
+
 
     # --- CORE LOGIC (Steps 1-13) ---
 
@@ -1424,8 +1348,8 @@ def run_phase1_for_symbol(symbol: str):
     choch_bull = scan_bullish_choch(df_sym, df_pre, choch_price)
 
     # 4c) Single-Counter-Engulfing (zusätzliche Struktur-L/H)
-    sc_threshold = get_single_counter_engulfing_price(symbol)
-    sc_points = scan_single_counter_engulfing(df_sym, sc_threshold)
+    # Hier nutzen wir den dynamisch berechneten sc_threshold_price
+    sc_points = scan_single_counter_engulfing(df_sym, sc_threshold_price)
 
     # 5) Merge
     points_with_choch_sc = merge_struct_points(base_plus_interm1, choch_bear, choch_bull, sc_points)

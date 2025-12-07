@@ -5,6 +5,7 @@ from typing import Optional, Any, Dict, List
 import pandas as pd
 import numpy as np
 import os
+import json # <--- NEU
 from config import PIP_SIZE_MAP
 
 # ==============================================================================
@@ -79,24 +80,9 @@ NEAR_TP_TRAILING_ENABLED = False
 # Beispiel: 0.10 bedeutet, das Trailing startet, wenn 90% des Targets erreicht sind (10% Offset)
 NEAR_TP_TRAILING_OFFSET_PCT = 0.10  # 10%
 
-
-# SL Buffer (in Pips)
-SL_BUFFER = {
-    "EURUSD": 0.0,
-    "GBPUSD": 0.0,
-    "AUDUSD": 0.0,
-    "NZDUSD": 0.0,
-    "USDCAD": 0.0,
-    "USDCHF": 0.0,
-    "USDJPY": 0.0,
-    "GBPJPY": 0.0,
-    "EURGBP": 0.0,
-    "DXY": 0.0,
-    "US30": 0.0,
-    "NAS100": 0.0,
-    "US500": 0.0,
-    "XAUUSD": 0.0,
-}
+# --- SL BUFFER CONFIG (EURUSD BASE) ---
+# Dynamic calculation: Base * Ratio
+BASE_SL_BUFFER = 0.0
 
 # --- TIME SETTINGS (NEW YORK TIME) ---
 
@@ -160,6 +146,20 @@ class ExitResult:
 # 4. HELPER FUNCTIONS
 # ==============================================================================
 
+# Hilfsvariable für Pfad zu Ratios (liegt im Haupt 'data' Ordner, nicht 'charting/data')
+ROOT_DATA_DIR = "data"
+
+def load_vola_ratio(symbol: str) -> float:
+    ratio_file = os.path.join(ROOT_DATA_DIR, "volatility_ratios.json")
+    if not os.path.exists(ratio_file):
+        return 1.0
+    try:
+        with open(ratio_file, "r") as f:
+            data = json.load(f)
+        return data.get(symbol, 1.0)
+    except:
+        return 1.0
+
 def _get_unique_filepath(path: str) -> str:
     if not os.path.exists(path): 
         return path
@@ -198,7 +198,8 @@ def _ensure_time_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_entry_for_setup_london_min_max_rr(setup_row: pd.Series,
                                             df_day: pd.DataFrame,
-                                            setup_idx: int) -> Optional[EntrySpec]:
+                                            setup_idx: int,
+                                            sl_buffer_pips: float) -> Optional[EntrySpec]: # <--- NEU ARG
     direction = setup_row["direction"]
     symbol = setup_row["symbol"]
     date_ny = setup_row["date_ny"]
@@ -206,7 +207,9 @@ def build_entry_for_setup_london_min_max_rr(setup_row: pd.Series,
     if pip_size is None: return None
 
     # Config-Werte laden
-    sl_buffer_pips = SL_BUFFER[symbol]
+    # sl_buffer_pips = SL_BUFFER[symbol]  <--- ENTFERNEN (jetzt Argument)
+    
+    # ... Rest der Funktion bleibt gleich ...
     
     if USE_GLOBAL_MIN_RR:
         min_rr = GLOBAL_MIN_RR
@@ -654,6 +657,11 @@ def run_phase3_one_leg_for_symbol(symbol: str):
     df_bars = pd.read_csv(input_bars_file)
     df_bars = _ensure_time_columns(df_bars)
     df_setups = pd.read_csv(input_setups_file)
+
+    # --- DYNAMIC PARAMS ---
+    vola_ratio = load_vola_ratio(symbol)
+    effective_sl_buffer = BASE_SL_BUFFER * vola_ratio
+    print(f"Volatility Ratio: {vola_ratio:.4f}, SL Buffer: {effective_sl_buffer:.2f} pips")
     
     exit_variants = ["exit_4pm", "exit_2pm", "exit_unmanaged"]
     stats_per_exit = {}
@@ -668,7 +676,7 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             
             expiration_str = f"{date_ny} {ENTRY_CUTOFF_HOUR:02d}:{ENTRY_CUTOFF_MINUTE:02d}:00"
 
-            spec = build_entry_for_setup_london_min_max_rr(row, df_day, i)
+            spec = build_entry_for_setup_london_min_max_rr(row, df_day, i, effective_sl_buffer) # <--- PASS ARG
             if spec is None:
                 # Entry nicht möglich (z.B. Limit über SL bei Squeeze, oder London Level fehlt)
                 results.append({"symbol": row["symbol"], "date_ny": date_ny, "setup_index": i, "direction": row["direction"], "exit_mode": exit_mode, "filled": False, "miss_reason": "calc_error_or_invalid", "expiration_time": expiration_str})
@@ -727,7 +735,8 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             ("cfg_target", "London High/Low"),
             ("cfg_entry_logic", "Market or Squeeze Limit"),
             ("cfg_near_tp_enabled", NEAR_TP_TRAILING_ENABLED),
-            ("cfg_sl_buffer_pips", SL_BUFFER.get(symbol, np.nan)),
+            ("cfg_sl_buffer_pips", effective_sl_buffer), # <--- USE DYNAMIC VAR
+            ("cfg_vola_ratio", vola_ratio),              # <--- NEU: Ratio loggen
             ("cfg_entry_cutoff_time", _fmt_time(ENTRY_CUTOFF_HOUR, ENTRY_CUTOFF_MINUTE)),
             ("cfg_exit_2pm_time", _fmt_time(EXIT_2PM_HOUR, EXIT_2PM_MINUTE)),
             ("cfg_session_close_time", _fmt_time(EXIT_SESSION_CLOSE_HOUR, EXIT_SESSION_CLOSE_MINUTE)),

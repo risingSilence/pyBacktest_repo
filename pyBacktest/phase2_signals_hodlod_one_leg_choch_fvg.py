@@ -2,7 +2,9 @@ print("phase2_signals_hodlod_one_leg_choch_fvg.py - starting up...")
 
 import pandas as pd
 import os
+import json # <--- NEU
 import numpy as np
+
 try:
     from config import START_DATE, END_DATE, PIP_SIZE_MAP
     START_DATE_NY = START_DATE
@@ -39,43 +41,13 @@ CHART_DATA_DIR = "charting/data"   # Hierhin schreiben wir für die HTML
 # WICHTIG - EURUSD ist der "ANKER" für andere Paare!
 # die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
 
-# NEU: Reduzierte Range-Vorgaben (One Leg)
-MIN_RANGE = {
-    "EURUSD": 7.0,
-    "GBPUSD": 8.8,
-    "AUDUSD": 5.3,
-    "NZDUSD": 4.7,
-    "USDCAD": 6.4,
-    "USDCHF": 5.8,
-    "USDJPY": 9.3,
-    "GBPJPY": 12.8,
-    "EURGBP": 4.1,
-    "DXY":    4.7,
-    "US30":   35.0,
-    "NAS100": 25.7,
-    "US500":  5.3,
-    "XAUUSD": 466.0,
-}
+# ---------------------------------
+# BASE CONFIG (EURUSD BASELINE)
+# ---------------------------------
+# Base Values for EURUSD (Ratio 1.0)
 
-# NEU: FVG Mindestgröße für das einzelne Leg
-# NEU: FVG Mindestgröße für das einzelne Leg
-# Basis: EURUSD = 0.5 (bei 60 Pips Range)
-MIN_SINGLE_FVG = {
-    "EURUSD": 0.5,
-    "GBPUSD": 0.6,
-    "AUDUSD": 0.4,
-    "NZDUSD": 0.3,
-    "USDCAD": 0.5,
-    "USDCHF": 0.4,
-    "USDJPY": 0.7,
-    "GBPJPY": 0.9,
-    "EURGBP": 0.3,
-    "DXY":    0.3,
-    "US30":   2.5,
-    "NAS100": 1.8,
-    "US500":  0.4,
-    "XAUUSD": 33.3,
-}
+BASE_MIN_RANGE = 7.0        # Pips Range (HOD -> Breakdown Low)
+BASE_MIN_SINGLE_FVG = 0.5   # Pips FVG Size
 
 # NY-Zeitfenster in Minuten seit 00:00
 NY_START_HOD_LOD = 8 * 60 + 30      # 08:30
@@ -161,6 +133,21 @@ def _scan_bull_fvgs_for_leg(highs, lows, start_pos: int, end_pos: int, pip_size:
                 sizes.append(size_price / pip_size)
     return sizes
 
+# ---------------------------------
+# LOAD VOLA RATIO
+# ---------------------------------
+
+def load_vola_ratio(symbol: str) -> float:
+    ratio_file = os.path.join(BASE_DATA_DIR, "volatility_ratios.json") # BASE_DATA_DIR ist "data"
+    if not os.path.exists(ratio_file):
+        return 1.0
+    try:
+        with open(ratio_file, "r") as f:
+            data = json.load(f)
+        return data.get(symbol, 1.0)
+    except:
+        return 1.0
+
 
 # ---------------------------------
 # SELL-Setup: HOD (HH) -> Break of prev HL (Close)
@@ -172,16 +159,21 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                             idx_to_pos,
                             highs,
                             lows,
-                            pip_size: float):
+                            pip_size: float,
+                            min_range_pips: float,    # <--- NEU
+                            min_single_fvg: float):   # <--- NEU
     """
     SELL-Setup (HOD-Seite, One Leg - Direct Break).
-    Struktur: HOD gefunden -> Suche letztes Swing Low davor (HL).
-    Trigger: Close < prev_HL.
-    Validierung: Range & FVG im Drop.
+    ...
     """
-
-    min_range = MIN_RANGE[symbol]
-    min_single = MIN_SINGLE_FVG[symbol]
+    # min_range = MIN_RANGE[symbol]       <--- ENTFERNEN
+    # min_single = MIN_SINGLE_FVG[symbol] <--- ENTFERNEN
+    
+    # Stattdessen nutzen wir die übergebenen Argumente direkt:
+    min_range = min_range_pips
+    min_single = min_single_fvg
+    
+    # ... Rest der Funktion bleibt gleich ...
 
     df_day = df_day.sort_index()
 
@@ -343,15 +335,17 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
                            idx_to_pos,
                            highs,
                            lows,
-                           pip_size: float):
-    """
-    BUY-Setup (LOD-Seite, One Leg - Direct Break).
-    Struktur: LOD gefunden -> Suche letztes Swing High davor (LH).
-    Trigger: Close > prev_LH.
-    """
-
-    min_range = MIN_RANGE[symbol]
-    min_single = MIN_SINGLE_FVG[symbol]
+                           pip_size: float,
+                           min_range_pips: float,    # <--- NEU
+                           min_single_fvg: float):   # <--- NEU
+    
+    # min_range = MIN_RANGE[symbol]       <--- ENTFERNEN
+    # min_single = MIN_SINGLE_FVG[symbol] <--- ENTFERNEN
+    
+    min_range = min_range_pips
+    min_single = min_single_fvg
+    
+    # ... Rest der Funktion bleibt gleich ...
 
     df_day = df_day.sort_index()
 
@@ -525,6 +519,17 @@ def run_phase2_one_leg_for_symbol(symbol: str):
 
     setups = []
 
+    # --- DYNAMIC PARAMS ---
+    vola_ratio = load_vola_ratio(symbol)
+    
+    # Berechne die effektiven Werte für dieses Symbol
+    effective_min_range = BASE_MIN_RANGE * vola_ratio
+    effective_min_fvg   = BASE_MIN_SINGLE_FVG * vola_ratio
+    
+    print(f"Volatility Ratio: {vola_ratio:.4f}")
+    print(f"Effective Min Range: {effective_min_range:.2f} pips")
+    print(f"Effective Min FVG:   {effective_min_fvg:.2f} pips")
+
     print(f"Scanning for {SETUP_NAME} setups...")
     
     for day, df_day in df_sym.groupby("date_ny"):
@@ -538,10 +543,12 @@ def run_phase2_one_leg_for_symbol(symbol: str):
             highs=highs,
             lows=lows,
             pip_size=pip_size,
+            min_range_pips=effective_min_range,  # <--- Pass dynamic value
+            min_single_fvg=effective_min_fvg     # <--- Pass dynamic value
         )
         if sell_setup is not None:
             hod_idx = sell_setup["hod_idx"]
-            choch_idx = sell_setup["choch_idx"] # Signal Kerze
+            choch_idx = sell_setup["choch_idx"] 
             
             if hod_idx in df_sym.index:
                 df_sym.loc[hod_idx, "sell_signal_top"] = True
@@ -557,10 +564,12 @@ def run_phase2_one_leg_for_symbol(symbol: str):
             highs=highs,
             lows=lows,
             pip_size=pip_size,
+            min_range_pips=effective_min_range,  # <--- Pass dynamic value
+            min_single_fvg=effective_min_fvg     # <--- Pass dynamic value
         )
         if buy_setup is not None:
             lod_idx = buy_setup["lod_idx"]
-            choch_idx = buy_setup["choch_idx"] # Signal Kerze
+            choch_idx = buy_setup["choch_idx"] 
             
             if lod_idx in df_sym.index:
                 df_sym.loc[lod_idx, "buy_signal_bottom"] = True
