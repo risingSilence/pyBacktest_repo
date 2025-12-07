@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import os
 import json
+import random
 from config import PIP_SIZE_MAP
 
 # ==============================================================================
@@ -26,6 +27,11 @@ SCENARIO_ID = "london_target_min_max_rr"
 
 # Stats Output Config
 OVERWRITE_STATS_FILE = True  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
+
+# --- RISK CALCULATION CONFIG ---
+MAX_RISK_PER_TRADE = 1.42       # Maximales Risiko pro Trade in % (Hardcap)
+TARGET_RUIN_PROB_PERCENT = 10   # Akzeptierte Ruin-Wahrscheinlichkeit in % (z.B. 10 = 10%)
+RISK_SIM_TRADES = 50            # Anzahl der Trades, über die der Ruin simuliert wird
 
 # --- MINIMUM RR CONFIG ---
 # Wenn Market-Entry dieses RR zum London-Target nicht erreicht, wird gesqueezed (Limit Entry).
@@ -138,6 +144,66 @@ class ExitResult:
 # ==============================================================================
 # 4. HELPER FUNCTIONS
 # ==============================================================================
+
+def calculate_safe_risk_per_trade(win_rate: float, avg_win_R: float, avg_loss_R: float) -> float:
+    """
+    Ermittelt das Risiko pro Trade (in %), sodass die Wahrscheinlichkeit, 
+    innerhalb von RISK_SIM_TRADES Trades einen 10% Drawdown zu erleiden, 
+    ca. TARGET_RUIN_PROB_PERCENT beträgt.
+    """
+    if win_rate <= 0 or avg_win_R <= 0:
+        return 0.0
+
+    # Umrechnung von Config-Prozent (10.0) in Wahrscheinlichkeit (0.10)
+    target_ruin_prob = TARGET_RUIN_PROB_PERCENT / 100.0
+    
+    max_drawdown_limit = 10.0  # 10% Konto-Verlust gilt als Ruin
+    n_trades = RISK_SIM_TRADES # Anzahl Trades aus Config
+    n_simulations = 2000       # Ausreichend für stabile Schätzung
+    
+    # Binary Search für das optimale Risiko zwischen 0.1% und MAX_RISK_PER_TRADE
+    low = 0.1
+    high = MAX_RISK_PER_TRADE
+    best_risk = 0.0
+    
+    for _ in range(10): # 10 Iterationen reichen für 1 Nachkommastelle Genauigkeit
+        current_risk = (low + high) / 2
+        ruin_count = 0
+        
+        for _ in range(n_simulations):
+            current_dd = 0.0
+            is_ruined = False
+            for _ in range(n_trades):
+                # Trade simulieren
+                if random.random() < win_rate:
+                    pnl = current_risk * avg_win_R
+                else:
+                    pnl = current_risk * avg_loss_R # avg_loss_R ist meist negativ
+                
+                current_dd += pnl
+                
+                # Withdrawal-Logik: Wenn wir im Plus sind, Reset auf 0 
+                if current_dd > 0:
+                    current_dd = 0
+                
+                # Check Ruin
+                if current_dd <= -max_drawdown_limit:
+                    is_ruined = True
+                    break
+            
+            if is_ruined:
+                ruin_count += 1
+        
+        current_ruin_prob = ruin_count / n_simulations
+        
+        if current_ruin_prob > target_ruin_prob:
+            high = current_risk # Risiko zu hoch
+        else:
+            best_risk = current_risk # Risiko okay, versuchen wir mehr?
+            low = current_risk
+
+    # Safety Cap final anwenden
+    return min(best_risk, MAX_RISK_PER_TRADE)
 
 # Hilfsvariable für Pfad zu Ratios (liegt im Haupt 'data' Ordner, nicht 'charting/data')
 ROOT_DATA_DIR = "data"
@@ -550,25 +616,61 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
     n_filled = int(df_trades["filled"].sum()) if "filled" in df_trades.columns else 0
     stats["n_setups"] = n_setups
     stats["n_filled"] = n_filled
-    stats["tag_rate"] = n_filled / n_setups if n_setups > 0 else np.nan
+    
+    # Tag Rate in Prozent (2 Nachkommastellen)
+    raw_tag_rate = n_filled / n_setups if n_setups > 0 else 0.0
+    stats["tag_rate_P"] = round(raw_tag_rate * 100, 2)
 
     df_filled = df_trades[df_trades["filled"] == True].copy() if "filled" in df_trades.columns else pd.DataFrame()
-    n_trades = len(df_filled)
-    stats["n_trades"] = n_trades
-
-    if n_trades == 0: return stats
+    
+    if df_filled.empty: 
+        return stats
 
     res_R = df_filled["result_R"].astype(float)
-    stats["win_rate"] = float((res_R > 0).mean()) if len(res_R) > 0 else np.nan
-    stats["avg_R"] = float(res_R.mean()) if len(res_R) > 0 else np.nan
+    
+    # Win Rate in Prozent (2 Nachkommastellen)
+    raw_win_rate = float((res_R > 0).mean()) if len(res_R) > 0 else 0.0
+    stats["win_rate_P"] = round(raw_win_rate * 100, 2)
+
+    # R-Metrics (Rundung auf 2 Nachkommastellen)
+    stats["avg_R"] = round(float(res_R.mean()), 2) if len(res_R) > 0 else np.nan
 
     winners = df_filled[res_R > 0]
     losers = df_filled[res_R < 0]
 
-    stats["avg_winner_R"] = float(winners["result_R"].mean()) if not winners.empty else np.nan
-    stats["avg_loser_R"] = float(losers["result_R"].mean()) if not losers.empty else np.nan
-    stats["cumulative_R"] = float(res_R.sum())
+    # Für die Risk-Berechnung nutzen wir die ungerundeten Rohdaten
+    raw_avg_win = float(winners["result_R"].mean()) if not winners.empty else 0.0
+    raw_avg_loss = float(losers["result_R"].mean()) if not losers.empty else -1.0
 
+    stats["avg_winner_R"] = round(raw_avg_win, 2)
+    stats["avg_loser_R"] = round(raw_avg_loss, 2)
+    
+    raw_cumulative_R = float(res_R.sum())
+    stats["cumulative_R"] = round(raw_cumulative_R, 2)
+
+    # --- P-Metrics Calculation ---
+    # 1. Risk per Trade berechnen (Rohwert)
+    raw_risk_p = calculate_safe_risk_per_trade(
+        raw_win_rate, 
+        raw_avg_win, 
+        raw_avg_loss
+    )
+    
+    # WICHTIG: Hier strikt auf 1 Nachkommastelle runden (z.B. 0.9 oder 1.0)
+    # und diesen Wert für alle weiteren P-Rechnungen nutzen!
+    rounded_risk_p = round(raw_risk_p, 1)
+    stats["risk_trade_P"] = rounded_risk_p
+    
+    # Cumulative P basierend auf Cumulative R (raw) * Risk (rounded)
+    stats["cumulative_P"] = round(raw_cumulative_R * rounded_risk_p, 2)
+    
+    # Avg P
+    if n_filled > 0:
+        stats["avg_P"] = round(stats["cumulative_P"] / n_filled, 2)
+    else:
+        stats["avg_P"] = 0.0
+
+    # --- Holding Time Stats ---
     if "sl_size_pips" in df_filled.columns:
         stats["avg_sl_size_pips"] = float(df_filled["sl_size_pips"].astype(float).mean())
     else:
@@ -589,10 +691,12 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
     stats["avg_sl_minutes"] = float(sl_trades["holding_minutes"].astype(float).mean()) if not sl_trades.empty else np.nan
     stats["avg_tp_minutes"] = float(tp_trades["holding_minutes"].astype(float).mean()) if not tp_trades.empty else np.nan
 
+    # --- Drawdowns & Streaks ---
     sort_col = "entry_time" if "entry_time" in df_filled.columns else None
     if sort_col:
         df_sorted = df_filled.sort_values(sort_col)
         res_sorted = df_sorted["result_R"].astype(float)
+        
         max_win_streak, max_loss_streak, cur_win, cur_loss = 0, 0, 0, 0
         for r in res_sorted:
             if r > 0: cur_win += 1; cur_loss = 0
@@ -608,9 +712,19 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
         eq_series = pd.concat([pd.Series([0.0]), equity], ignore_index=True)
         running_max = eq_series.cummax()
         drawdowns = running_max - eq_series
-        stats["max_drawdown_R"] = float(drawdowns.max())
-        stats["avg_drawdown_R"] = float(drawdowns.mean())
+        
+        raw_max_dd_R = float(drawdowns.max())
+        raw_avg_dd_R = float(drawdowns.mean())
+        
+        # R-Drawdowns (gerundet auf 2)
+        stats["max_drawdown_R"] = round(raw_max_dd_R, 2)
+        stats["avg_drawdown_R"] = round(raw_avg_dd_R, 2)
 
+        # P-Drawdowns (gerundet auf 2) basierend auf rounded_risk_p
+        stats["max_drawdown_P"] = round(raw_max_dd_R * rounded_risk_p, 2)
+        stats["avg_drawdown_P"] = round(raw_avg_dd_R * rounded_risk_p, 2)
+
+    # Formatting Strings
     stats["avg_holding_hhmm"] = _format_minutes_to_hhmm(stats.get("avg_holding_minutes"))
     stats["avg_holding_hhmm_winners"] = _format_minutes_to_hhmm(stats.get("avg_holding_minutes_winners"))
     stats["avg_holding_hhmm_losers"] = _format_minutes_to_hhmm(stats.get("avg_holding_minutes_losers"))
@@ -703,17 +817,42 @@ def run_phase3_one_leg_for_symbol(symbol: str):
 
     # Save Stats
     if stats_per_exit:
-        all_metrics = set()
-        for s in stats_per_exit.values(): all_metrics.update(s.keys())
-        all_metrics = sorted(all_metrics)
+        # Definierte Reihenfolge laut User-Anforderung
+        ordered_metrics = [
+            "avg_P", 
+            "avg_R", 
+            "cumulative_P", 
+            "cumulative_R", 
+            "risk_trade_P",
+            "max_drawdown_R", 
+            "max_drawdown_P", 
+            "avg_drawdown_R", 
+            "avg_drawdown_P",
+            
+            "win_rate_P",       # Umbenannt (Prozent)
+            "avg_winner_R", 
+            "avg_loser_R",
+            "max_win_streak", 
+            "max_loss_streak",
+            
+            "n_setups", 
+            "n_filled", 
+            "tag_rate_P",       # Umbenannt (Prozent)
+            
+            "avg_holding_hhmm", "avg_holding_hhmm_losers", "avg_holding_hhmm_winners",
+            "avg_holding_minutes", "avg_holding_minutes_losers", "avg_holding_minutes_winners",
+            "avg_sl_minutes", "avg_sl_size_pips", "avg_sl_time_hhmm",
+            "avg_tp_minutes", "avg_tp_time_hhmm"
+        ]
         
         rows = []
         
         # 1. Performance Metrics
-        for metric in all_metrics:
+        for metric in ordered_metrics:
             row = {"metric": metric}
             for exit_mode in exit_variants:
-                row[exit_mode] = stats_per_exit.get(exit_mode, {}).get(metric, np.nan)
+                val = stats_per_exit.get(exit_mode, {}).get(metric, np.nan)
+                row[exit_mode] = val
             rows.append(row)
 
         # 2. Configuration Metadata
