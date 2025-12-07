@@ -4,15 +4,15 @@ import pandas as pd
 import os
 import numpy as np
 try:
-    from config import START_DATE_PHASE23, END_DATE_PHASE23, PIP_SIZE_MAP
-    START_DATE_NY = START_DATE_PHASE23
-    END_DATE_NY = END_DATE_PHASE23
+    from config import START_DATE, END_DATE, PIP_SIZE_MAP
+    START_DATE_NY = START_DATE
+    END_DATE_NY = END_DATE
 except ImportError:
-    # Fallback, falls config.py nicht gefunden wird oder man es standalone testet
+    # Fallback, if config.py is not found or testing standalone
     from datetime import datetime
-    print("WARN: config.py or new phase 2/3 dates not found, using default dates.")
-    START_DATE_NY = datetime(2025, 11, 1) # NUR FALLBACK!!!
-    END_DATE_NY   = datetime(2025, 11, 8) # NUR FALLBACK!!!
+    print("WARN: config.py dates not found, using default dates.")
+    START_DATE_NY = datetime(2023, 1, 1) # Fallback
+    END_DATE_NY   = datetime(2025, 11, 21) # Fallback
 
 # ---------------------------------
 # CONFIG

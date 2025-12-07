@@ -1,18 +1,13 @@
 from datetime import datetime
 
 # ----------------------------------------------------------------
-# ZENTRALE KONFIGURATION FÜR ZEITRAUM-FILTER
+# ZENTRALE KONFIGURATION FUER ZEITRAUM-FILTER
 # ----------------------------------------------------------------
 
-# Zeitraum für die Rohdaten-Verarbeitung (Phase 0a/0b/1)
-# Sollte den vollen Umfang der M1-Daten abdecken.
-START_DATE_PHASE01 = datetime(2021, 1, 1)
-END_DATE_PHASE01   = datetime(2025, 11, 21)
-
-# Zeitraum für die Backtesting-Logik (Phase 2/3)
-# Definiert den Zeitraum, auf dem die Setup-Erkennung laufen soll.
-START_DATE_PHASE23 = datetime(2023, 1, 1)
-END_DATE_PHASE23   = datetime(2025, 11, 21)
+# Einheitlicher Zeitraum fuer alle Phasen (0 bis 3).
+# Dies definiert sowohl den Download/Prep-Zeitraum als auch den Backtest-Zeitraum.
+START_DATE = datetime(2021, 1, 1)
+END_DATE   = datetime(2025, 11, 21)
 
 
 # ----------------------------------------------------------------

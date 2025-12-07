@@ -21,16 +21,16 @@ CSV_FILENAME_TEMPLATE = "{symbol}_{year}_M1.csv"
 # Symbole
 SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
-# Zeitraum in NEW YORK ZEIT
+# Time period in NEW YORK TIME
 try:
-    from config import START_DATE_PHASE01, END_DATE_PHASE01
-    START_DATE_NY = START_DATE_PHASE01
-    END_DATE_NY = END_DATE_PHASE01
+    from config import START_DATE, END_DATE
+    START_DATE_NY = START_DATE
+    END_DATE_NY = END_DATE
 except ImportError:
-    # Fallback, falls config.py nicht gefunden wird oder die neuen Variablen fehlen
-    print("WARN: New Phase 0/1 dates from config.py not found, using default dates.")
+    # Fallback, falls config.py nicht gefunden wird
+    print("WARN: Dates from config.py not found, using default dates.")
     START_DATE_NY = datetime(2021, 1, 1)
-    END_DATE_NY   = datetime(2025, 11, 21)  # ggf. anpassen
+    END_DATE_NY   = datetime(2025, 11, 21)
 
 # Local time (GMT+1) -> NY (GMT-5) = -6 Stunden
 LOCAL_TO_NY_OFFSET_HOURS = 6
