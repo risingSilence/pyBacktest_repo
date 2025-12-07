@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Einheitlicher Zeitraum fuer alle Phasen (0 bis 3).
 # Dies definiert sowohl den Download/Prep-Zeitraum als auch den Backtest-Zeitraum.
-START_DATE = datetime(2021, 1, 1)
+START_DATE = datetime(2023, 1, 1)
 END_DATE   = datetime(2025, 11, 21)
 
 
