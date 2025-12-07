@@ -250,13 +250,13 @@ def calculate_and_save_volatility_ratios():
         else:
             ratios[symbol] = 1.0
             
-    # 3. Speichern
-    out_path = os.path.join(DATA_DIR, "volatility_ratios.json")
+    # 3. Speichern (Explizit als NY Version benannt)
+    out_path = os.path.join(DATA_DIR, "volatility_ratios_NY.json")
     with open(out_path, "w") as f:
         json.dump(ratios, f, indent=4)
         
-    print(f"Saved volatility ratios to {out_path}")
-    print(f"EURUSD Base Vola: {base_vola:.2f} pips")
+    print(f"Saved NY volatility ratios to {out_path}")
+    print(f"EURUSD Base Vola (NY AM): {base_vola:.2f} pips")
     print("-" * 30)
 
 

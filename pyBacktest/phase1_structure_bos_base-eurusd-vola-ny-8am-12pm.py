@@ -36,7 +36,9 @@ BASE_SKIP_PIPS = 1.5
 # ---------------------------------
 
 def load_vola_ratio(symbol: str) -> float:
-    ratio_file = os.path.join(DATA_DIR, "volatility_ratios.json")
+    # Explizit das NY Ratio File laden
+    ratio_file = os.path.join(DATA_DIR, "volatility_ratios_NY.json")
+    
     if not os.path.exists(ratio_file):
         print(f"WARN: {ratio_file} not found. Defaulting to 1.0 ratio.")
         return 1.0

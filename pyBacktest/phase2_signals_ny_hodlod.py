@@ -1,8 +1,8 @@
-print("phase2_signals_hodlod_one_leg_choch_fvg.py - starting up...")
+print("phase2_signals_ny_hodlod.py - starting up...")
 
 import pandas as pd
 import os
-import json # <--- NEU
+import json
 import numpy as np
 
 try:
@@ -23,11 +23,11 @@ except ImportError:
 # Liste der Symbole
 SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
-# Setup-Name für Dateinamen
-SETUP_NAME = "hodlod_one_leg_choch_fvg"
+# Setup-Name für Dateinamen (VEREINFACHT)
+SETUP_NAME = "ny_hodlod"
 
-# Oben in der Config ergänzen:
-PHASE1_SUFFIX = "_NY"  # oder "_LONDON" für das andere File
+# Suffix der VORHERIGEN Phase (Input), um die richtigen Struktur-Daten zu finden
+PHASE1_INPUT_SUFFIX = "_NY" 
 
 # TIME FRAME KONFIGURATION
 SETUP_TF = "M5"              # Der Timeframe, auf dem wir suchen
@@ -36,10 +36,6 @@ SETUP_TF_MINUTES = 5         # Dauer einer Kerze in Minuten (für End-Zeit-Berec
 # Pfade definieren
 BASE_DATA_DIR = "data"             # Hier liegt der Phase 1 Output
 CHART_DATA_DIR = "charting/data"   # Hierhin schreiben wir für die HTML
-
-# Parameter
-# WICHTIG - EURUSD ist der "ANKER" für andere Paare!
-# die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
 
 # ---------------------------------
 # BASE CONFIG (EURUSD BASELINE)
@@ -91,7 +87,7 @@ def _build_index_maps(df: pd.DataFrame):
 
 
 # ---------------------------------
-# FVG-Scan (identisch zu Phase 2 alt, aber wir nutzen nur das Resultat für Leg 1)
+# FVG-Scan
 # ---------------------------------
 
 def _scan_bear_fvgs_for_leg(highs, lows, start_pos: int, end_pos: int, pip_size: float):
@@ -138,7 +134,9 @@ def _scan_bull_fvgs_for_leg(highs, lows, start_pos: int, end_pos: int, pip_size:
 # ---------------------------------
 
 def load_vola_ratio(symbol: str) -> float:
-    ratio_file = os.path.join(BASE_DATA_DIR, "volatility_ratios.json") # BASE_DATA_DIR ist "data"
+    # Explizit das NY Ratio File laden
+    ratio_file = os.path.join(BASE_DATA_DIR, "volatility_ratios_NY.json") # BASE_DATA_DIR ist "data"
+    
     if not os.path.exists(ratio_file):
         return 1.0
     try:
@@ -160,20 +158,13 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                             highs,
                             lows,
                             pip_size: float,
-                            min_range_pips: float,    # <--- NEU
-                            min_single_fvg: float):   # <--- NEU
+                            min_range_pips: float,
+                            min_single_fvg: float):
     """
     SELL-Setup (HOD-Seite, One Leg - Direct Break).
-    ...
     """
-    # min_range = MIN_RANGE[symbol]       <--- ENTFERNEN
-    # min_single = MIN_SINGLE_FVG[symbol] <--- ENTFERNEN
-    
-    # Stattdessen nutzen wir die übergebenen Argumente direkt:
     min_range = min_range_pips
     min_single = min_single_fvg
-    
-    # ... Rest der Funktion bleibt gleich ...
 
     df_day = df_day.sort_index()
 
@@ -194,36 +185,16 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
             and NY_START_HOD_LOD <= minute <= NY_END_HOD_LOD
         ):
             # Neuer potenzieller Anker gefunden
-            
-            # --- RÜCKWÄRTSSUCHE NACH DEM VORIGEN HL ---
-            # Wir nutzen df_sym und idx_to_pos, um effizient zurückzuschauen
             pos_hod = idx_to_pos.get(idx)
             if pos_hod is None: continue
             
             # Suche rückwärts ab pos_hod - 1 nach einem Swing Low
             found_hl_price = None
-            
-            # Limitieren wir den Lookback auf z.B. 500 Bars, um nicht ewig zu suchen
-            # (In M5 sind 500 Bars ca 2 Tage, das sollte reichen für Struktur)
             start_search = max(0, pos_hod - 500)
             
-            # Slice holen (wir brauchen Swing Labels)
-            # Achtung: df_sym ist groß, wir iterieren lieber über Indizes rückwärts
-            # Wir greifen direkt auf die Spalte zu, um Speed zu haben
-            # Da df_sym index=timestamp ist, nutzen wir iloc via pos
-            
-            # Wir iterieren manuell rückwärts:
             for k in range(pos_hod - 1, start_search - 1, -1):
-                # Check label
-                # Wir holen das Label aus dem DataFrame an Position k
-                # Das ist performanter als .loc wenn wir den Integer Index k kennen
-                # (df_sym.iloc[k] ist Series)
-                
-                # Optimierung: Wir schauen nur, ob swing_low_label != "" ist.
-                # Wir akzeptieren HL, LL, L0 als "Struktur-Tief"
                 val = df_sym.iat[k, df_sym.columns.get_loc("swing_low_label")]
                 if val and isinstance(val, str) and val in ["HL", "LL", "L0", "L_eq"]:
-                    # Gefunden!
                     found_hl_price = df_sym.iat[k, df_sym.columns.get_loc("swing_low_price")]
                     break
             
@@ -233,7 +204,6 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                 anchor_hh_high = float(row["high"])
                 break_level = float(found_hl_price)
             else:
-                # Kein Struktur-Tief davor gefunden -> HOD ignorieren
                 anchor_hh_idx = None
                 break_level = None
             
@@ -243,10 +213,7 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
             continue
 
         # 2) TRIGGER: Close unter break_level
-        # Wir sind zeitlich NACH dem HOD (durch Loop-Struktur garantiert)
-        
         if minute >= NY_SIGNAL_CUTOFF:
-            # Zu spät -> Setup verwerfen
             anchor_hh_idx = None
             break_level = None
             continue
@@ -256,7 +223,6 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
         if close_price < break_level:
             # --- SIGNAL: CHOCH ---
             
-            # London Low Check (Hard Filter)
             if "has_broken_london_low" in df_day.columns:
                 val = row.get("has_broken_london_low")
                 if pd.notna(val) and bool(val):
@@ -264,21 +230,14 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                     break_level = None
                     continue
 
-            # Validierung: Range & FVG checken
-            # Range: HOD bis Low der Signal-Kerze (oder Break-Level?)
-            # Wir nehmen HOD bis aktuelles Low, da das der Move ist.
             current_low = float(row["low"])
             range_price = anchor_hh_high - current_low
             range_pips = range_price / pip_size
             
             if range_pips < min_range:
-                # Range zu klein -> weitersuchen (vllt kommt später noch ein Break tiefer?)
-                # Aber hier ist es ein "Event": Der erste Close drunter zählt.
-                # Wenn der zu klein ist, ist das Setup meist invalid.
                 anchor_hh_idx = None
                 continue
 
-            # FVG Check (HOD bis Current Candle)
             signal_idx = idx
             pos_hod = idx_to_pos[anchor_hh_idx]
             pos_signal = idx_to_pos[signal_idx]
@@ -289,7 +248,6 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                 anchor_hh_idx = None
                 continue
             
-            # Alles valide -> Setup erstellen
             signal_end_ts = pd.Timestamp(signal_idx) + pd.Timedelta(minutes=SETUP_TF_MINUTES)
 
             return {
@@ -300,23 +258,15 @@ def find_sell_setup_for_day(df_sym: pd.DataFrame,
                 "signal_start_time": anchor_hh_idx,
                 "signal_end_time": signal_end_ts,
 
-                # Wichtige Punkte
                 "hod_idx": anchor_hh_idx,
-                
-                # Wir mappen den "ll1_idx" auf die Signal-Kerze (Breakdown).
-                # Phase 3 scannt dann FVG von HOD bis hierher -> korrekt.
                 "ll1_idx": signal_idx, 
                 "choch_idx": signal_idx,
                 
                 "hod_price": anchor_hh_high,
-                # ll1_price ist hier das Low der Breakdown-Kerze
                 "ll1_price": current_low, 
                 "choch_close_price": close_price,
                 
-                # Meta für Debugging (welches HL wurde gebrochen?)
-                # Speichern wir optional, stört Phase 3 nicht
                 "break_level_price": break_level,
-                
                 "range_pips": range_pips,
                 "fvg_max_leg1": max(sizes_leg1) if sizes_leg1 else 0.0,
                 "fvg_max_leg2": 0.0 
@@ -336,16 +286,11 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
                            highs,
                            lows,
                            pip_size: float,
-                           min_range_pips: float,    # <--- NEU
-                           min_single_fvg: float):   # <--- NEU
-    
-    # min_range = MIN_RANGE[symbol]       <--- ENTFERNEN
-    # min_single = MIN_SINGLE_FVG[symbol] <--- ENTFERNEN
+                           min_range_pips: float,
+                           min_single_fvg: float):
     
     min_range = min_range_pips
     min_single = min_single_fvg
-    
-    # ... Rest der Funktion bleibt gleich ...
 
     df_day = df_day.sort_index()
 
@@ -364,7 +309,6 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
             and bool(row.get("is_day_low_bar", False))
             and NY_START_HOD_LOD <= minute <= NY_END_HOD_LOD
         ):
-            # Rückwärtssuche nach LH
             pos_lod = idx_to_pos.get(idx)
             if pos_lod is None: continue
             
@@ -438,7 +382,6 @@ def find_buy_setup_for_day(df_sym: pd.DataFrame,
                 "signal_end_time": signal_end_ts,
 
                 "lod_idx": anchor_ll_idx,
-                # Mapping hh1_idx auf Signal-Kerze
                 "hh1_idx": signal_idx,
                 "choch_idx": signal_idx,
                 
@@ -464,14 +407,15 @@ def run_phase2_one_leg_for_symbol(symbol: str):
     if not os.path.exists(CHART_DATA_DIR):
         os.makedirs(CHART_DATA_DIR)
 
-    # Dateinamen dynamisch
-    input_filename = f"data_{symbol}_M5_phase1_structure{PHASE1_SUFFIX}.csv"
+    # Dateinamen dynamisch: INPUT kommt von Phase 1 (behält _NY suffix)
+    input_filename = f"data_{symbol}_M5_phase1_structure{PHASE1_INPUT_SUFFIX}.csv"
     input_file = os.path.join(BASE_DATA_DIR, input_filename)
 
-    output_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}{PHASE1_SUFFIX}.csv"
+    # Dateinamen dynamisch: OUTPUT ist vereinfacht!
+    output_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}.csv"
     output_bars_file = os.path.join(CHART_DATA_DIR, output_bars_filename)
 
-    output_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}{PHASE1_SUFFIX}.csv"
+    output_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}.csv"
     output_setups_file = os.path.join(CHART_DATA_DIR, output_setups_filename)
 
     if not os.path.exists(input_file):
@@ -608,5 +552,5 @@ if __name__ == "__main__":
         main()
     except Exception:
         import traceback
-        print("ERROR in phase2_signals_hodlod_one_leg_choch_fvg.py:")
+        print("ERROR in phase2_signals_ny_hodlod.py:")
         traceback.print_exc()

@@ -1,11 +1,11 @@
-print("phase3_trades_hodlod_one_leg_choch_fvg_london_minRR_maxRR.py - starting up...")
+print("phase3_trades_ny_hodlod.py - starting up...")
 
 from dataclasses import dataclass
 from typing import Optional, Any, Dict, List
 import pandas as pd
 import numpy as np
 import os
-import json # <--- NEU
+import json
 from config import PIP_SIZE_MAP
 
 # ==============================================================================
@@ -15,11 +15,8 @@ from config import PIP_SIZE_MAP
 # Liste der Symbole
 SYMBOLS = ["EURGBP"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
-# WICHTIG: Muss exakt so heißen wie in deiner Phase 2 Datei definiert!
-SETUP_NAME = "hodlod_one_leg_choch_fvg"
-
-# Oben in der Config:
-PHASE_SUFFIX = "_NY"
+# WICHTIG: Muss exakt so heißen wie in der Phase 2 Datei!
+SETUP_NAME = "ny_hodlod"
 
 # --- PATHS ---
 CHART_DATA_DIR = "charting/data"
@@ -45,16 +42,15 @@ MIN_RR_MAP = {
     "GBPJPY": 3.0,
     "EURGBP": 3.0,
     "DXY":    3.0,
-    "US30":   2.5, # Indizes scalping oft kleineres RR initial
+    "US30":   2.5, 
     "NAS100": 2.5,
     "US500":  2.5,
     "XAUUSD": 3.0,
 }
 
-# --- MAXIMUM RR CONFIG (NEU) ---
+# --- MAXIMUM RR CONFIG ---
 # Wenn Market-Entry möglich ist, aber das RR zum London-Target > MaxRR wäre,
 # wird der TP verkürzt (Entry bleibt Market), um genau MaxRR zu erzielen.
-# (Greift nicht beim Squeeze, da dort immer auf MinRR gezielt wird).
 USE_GLOBAL_MAX_RR = False
 GLOBAL_MAX_RR = 10.0
 MAX_RR_MAP = {
@@ -75,9 +71,6 @@ MAX_RR_MAP = {
 }
 # --- NEAR-TP TRAILING CONFIG ---
 NEAR_TP_TRAILING_ENABLED = False
-
-# NEU: Globaler Offset in Prozent vom individuellen Target-RR
-# Beispiel: 0.10 bedeutet, das Trailing startet, wenn 90% des Targets erreicht sind (10% Offset)
 NEAR_TP_TRAILING_OFFSET_PCT = 0.10  # 10%
 
 # --- SL BUFFER CONFIG (EURUSD BASE) ---
@@ -150,7 +143,9 @@ class ExitResult:
 ROOT_DATA_DIR = "data"
 
 def load_vola_ratio(symbol: str) -> float:
-    ratio_file = os.path.join(ROOT_DATA_DIR, "volatility_ratios.json")
+    # Explizit das NY Ratio File laden
+    ratio_file = os.path.join(ROOT_DATA_DIR, "volatility_ratios_NY.json")
+    
     if not os.path.exists(ratio_file):
         return 1.0
     try:
@@ -199,17 +194,13 @@ def _ensure_time_columns(df: pd.DataFrame) -> pd.DataFrame:
 def build_entry_for_setup_london_min_max_rr(setup_row: pd.Series,
                                             df_day: pd.DataFrame,
                                             setup_idx: int,
-                                            sl_buffer_pips: float) -> Optional[EntrySpec]: # <--- NEU ARG
+                                            sl_buffer_pips: float) -> Optional[EntrySpec]: # <--- PASS ARG
     direction = setup_row["direction"]
     symbol = setup_row["symbol"]
     date_ny = setup_row["date_ny"]
     pip_size = PIP_SIZE_MAP.get(symbol)
     if pip_size is None: return None
 
-    # Config-Werte laden
-    # sl_buffer_pips = SL_BUFFER[symbol]  <--- ENTFERNEN (jetzt Argument)
-    
-    # ... Rest der Funktion bleibt gleich ...
     
     if USE_GLOBAL_MIN_RR:
         min_rr = GLOBAL_MIN_RR
@@ -635,23 +626,26 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
 def run_phase3_one_leg_for_symbol(symbol: str):
     print(f"--- Processing Phase 3 (One Leg) for {symbol} ---")
 
-    # Dateinamen dynamisch bauen
-    input_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}{PHASE_SUFFIX}.csv"
+    # Dateinamen dynamisch bauen (Input: Phase 2 Output, simplified)
+    input_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}.csv"
     input_bars_file = os.path.join(CHART_DATA_DIR, input_bars_filename)
 
-    input_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}{PHASE_SUFFIX}.csv"
+    input_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}.csv"
     input_setups_file = os.path.join(CHART_DATA_DIR, input_setups_filename)
 
-    # Templates für Output (NEUER NAME)
-    trades_file_template = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_trades_{SETUP_NAME}{PHASE_SUFFIX}_london_minRR_maxRR_{{exit_suffix}}.csv")
+    # Templates für Output (Vereinfacht)
+    # Output: data_EURGBP_M5_trades_ny_hodlod_exit_4pm.csv
+    trades_file_template = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_trades_{SETUP_NAME}_{{exit_suffix}}.csv")
     
-    # NEU: Stats Ordner erstellen und Pfad anpassen
+    # NEU: Stats Ordner erstellen und Pfad anpassen (Vereinfacht)
     stats_dir = os.path.join(CHART_DATA_DIR, "stats")
     os.makedirs(stats_dir, exist_ok=True)
-    output_stats_file = os.path.join(stats_dir, f"data_{symbol}_M5_stats_{SETUP_NAME}{PHASE_SUFFIX}_london_minRR_maxRR.csv")
+    # Stats: data_EURGBP_M5_stats_ny_hodlod.csv
+    output_stats_file = os.path.join(stats_dir, f"data_{symbol}_M5_stats_{SETUP_NAME}.csv")
 
     if not os.path.exists(input_bars_file) or not os.path.exists(input_setups_file):
         print(f"Skipping {symbol}: Input files not found. Run Phase 2 first.")
+        print(f"Expected: {input_bars_file}")
         return
 
     df_bars = pd.read_csv(input_bars_file)
@@ -678,7 +672,7 @@ def run_phase3_one_leg_for_symbol(symbol: str):
 
             spec = build_entry_for_setup_london_min_max_rr(row, df_day, i, effective_sl_buffer) # <--- PASS ARG
             if spec is None:
-                # Entry nicht möglich (z.B. Limit über SL bei Squeeze, oder London Level fehlt)
+                # Entry nicht möglich
                 results.append({"symbol": row["symbol"], "date_ny": date_ny, "setup_index": i, "direction": row["direction"], "exit_mode": exit_mode, "filled": False, "miss_reason": "calc_error_or_invalid", "expiration_time": expiration_str})
                 continue
             
@@ -736,7 +730,7 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             ("cfg_entry_logic", "Market or Squeeze Limit"),
             ("cfg_near_tp_enabled", NEAR_TP_TRAILING_ENABLED),
             ("cfg_sl_buffer_pips", effective_sl_buffer), # <--- USE DYNAMIC VAR
-            ("cfg_vola_ratio", vola_ratio),              # <--- NEU: Ratio loggen
+            ("cfg_vola_ratio", vola_ratio),              # <--- Ratio loggen
             ("cfg_entry_cutoff_time", _fmt_time(ENTRY_CUTOFF_HOUR, ENTRY_CUTOFF_MINUTE)),
             ("cfg_exit_2pm_time", _fmt_time(EXIT_2PM_HOUR, EXIT_2PM_MINUTE)),
             ("cfg_session_close_time", _fmt_time(EXIT_SESSION_CLOSE_HOUR, EXIT_SESSION_CLOSE_MINUTE)),
