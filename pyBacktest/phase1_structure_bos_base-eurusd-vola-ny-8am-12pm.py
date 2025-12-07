@@ -9,7 +9,7 @@ from datetime import datetime
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
 
 DATA_DIR = "data"
 
@@ -21,33 +21,59 @@ LEFT_LOOKBACK = 1
 RIGHT_LOOKFORWARD = 1
 
 # Min. Swing-Amplitude für Pivots
+# WICHTIG - EURUSD ist der "ANKER" für andere Paare!
+# die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
+
 MIN_SWING_PIPS = {
-    "AUDUSD": 2.0,
     "EURUSD": 3.0,
-    "GBPUSD": 4.0,
+    "GBPUSD": 3.2,
+    "AUDUSD": 2.6,
+    "NZDUSD": 2.3,
+    "USDJPY": 1.9,
+    "USDCAD": 3.1,
+    "USDCHF": 2.7,
+    "GBPJPY": 4.3,
+    "EURGBP": 1.5,
 }
 
 SINGLE_COUNTER_ENGULFING = {
-    "AUDUSD": 2.7,
     "EURUSD": 4.0,
-    "GBPUSD": 6.0,
+    "GBPUSD": 4.3,
+    "AUDUSD": 3.5,
+    "NZDUSD": 3.0,
+    "USDJPY": 2.6,
+    "USDCAD": 4.2,
+    "USDCHF": 3.6,
+    "GBPJPY": 5.7,
+    "EURGBP": 2.0,
 }
 
 # Pips für CHOCH-Erkennung
 CHOCH_PIPS = {
-    "AUDUSD": 1.0,
     "EURUSD": 1.5,
-    "GBPUSD": 2.0,
+    "GBPUSD": 1.6,
+    "AUDUSD": 1.3,
+    "NZDUSD": 1.1,
+    "USDJPY": 1.0,
+    "USDCAD": 1.6,
+    "USDCHF": 1.4,
+    "GBPJPY": 2.2,
+    "EURGBP": 0.8,
 }
 
 # Min. lookahead/lookforward skip pips (Hintertür),
 # separat definierbar (hier = CHOCH-Werte)
 SKIP_PIPS = {
-    "AUDUSD": 1.0,
     "EURUSD": 1.5,
-    "GBPUSD": 2.0,
+    "GBPUSD": 1.6,
+    "AUDUSD": 1.3,
+    "NZDUSD": 1.1,
+    "USDJPY": 1.0,
+    "USDCAD": 1.6,
+    "USDCHF": 1.4,
+    "GBPJPY": 2.2,
+    "EURGBP": 0.8,
 }
-
 
 # ---------------------------------
 # Helpers
@@ -59,10 +85,16 @@ def get_single_counter_engulfing_price(symbol: str) -> float:
 
 
 def get_base_pair(symbol: str) -> str:
+    # Wenn das Symbol direkt in der Map ist (z.B. "US30"), nimm es direkt
+    if symbol in MIN_SWING_PIPS:
+        return symbol
+
+    # Fallback für Forex-Paare (falls du z.B. EURUSD_micro handelst)
     for base in ["EURUSD", "GBPUSD", "AUDUSD"]:
         if symbol.startswith(base):
             return base
-    raise ValueError(f"Unknown base pair for symbol '{symbol}'")
+
+    raise ValueError(f"Unknown base pair or config missing for symbol '{symbol}'")
 
 
 def get_min_swing_price(symbol: str) -> float:
@@ -1312,7 +1344,11 @@ def run_phase1_for_symbol(symbol: str):
     input_filename = f"data_{symbol}_M5_phase0_enriched.csv"
     input_file = os.path.join(DATA_DIR, input_filename)
 
-    output_filename = f"data_{symbol}_M5_phase1_structure.csv"
+    # ALT:
+    # output_filename = f"data_{symbol}_M5_phase1_structure.csv"
+    
+    # NEU (Vorschlag):
+    output_filename = f"data_{symbol}_M5_phase1_structure_NY.csv"
     output_file = os.path.join(DATA_DIR, output_filename)
 
     if not os.path.exists(input_file):

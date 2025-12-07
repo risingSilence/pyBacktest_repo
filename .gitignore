@@ -31,3 +31,9 @@ pyBacktest_GEM/
 
 # Backup-ZIPs im Hauptordner werden ignoriert
 pyBacktest_*.zip
+
+pyBacktest/phase2_signals_hodlod_micro_two_leg_fvg.py
+pyBacktest/phase2_signals_hodlod_two_m5_legs_choch_fvgs.py
+pyBacktest/phase3_trades_hodlod_micro_two_leg_fvg.py
+pyBacktest/phase3_trades_hodlod_one_leg_choch_fvg.py
+pyBacktest/phase3_trades_hodlod_two_m5_legs_choch_fvgs.py

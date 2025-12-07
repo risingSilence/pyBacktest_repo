@@ -20,6 +20,9 @@ SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 # Setup-Name für Dateinamen (damit man im Frontend weiß, was es ist)
 SETUP_NAME = "hodlod_two_m5_legs_choch_fvgs"
 
+# Oben in der Config ergänzen:
+PHASE1_SUFFIX = "_NY"  # oder "_LONDON" für das andere File
+
 # TIME FRAME KONFIGURATION (NEU)
 SETUP_TF = "M5"              # Der Timeframe, auf dem wir suchen
 SETUP_TF_MINUTES = 5         # Dauer einer Kerze in Minuten (für End-Zeit-Berechnung)
@@ -506,13 +509,13 @@ def run_phase2_two_legs_for_symbol(symbol: str):
     pip_size = PIP_SIZE_MAP[symbol]
 
     # Dateinamen dynamisch
-    input_filename = f"data_{symbol}_M5_phase1_structure.csv"
+    input_filename = f"data_{symbol}_M5_phase1_structure{PHASE1_SUFFIX}.csv"
     input_file = os.path.join(BASE_DATA_DIR, input_filename)
 
-    output_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}.csv"
+    output_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}{PHASE1_SUFFIX}.csv"
     output_bars_file = os.path.join(CHART_DATA_DIR, output_bars_filename)
 
-    output_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}.csv"
+    output_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}{PHASE1_SUFFIX}.csv"
     output_setups_file = os.path.join(CHART_DATA_DIR, output_setups_filename)
 
     if not os.path.exists(input_file):

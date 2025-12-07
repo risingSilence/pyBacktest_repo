@@ -14,7 +14,10 @@ import os
 SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
 
 # WICHTIG: Muss exakt so heißen wie in deiner Phase 2 Datei definiert!
-SETUP_NAME = "hodlod_one_leg_choch_fvg" 
+SETUP_NAME = "hodlod_one_leg_choch_fvg"
+
+# Oben in der Config:
+PHASE_SUFFIX = "_NY"
 
 # --- PATHS ---
 CHART_DATA_DIR = "charting/data"
@@ -598,19 +601,19 @@ def run_phase3_one_leg_for_symbol(symbol: str):
     print(f"--- Processing Phase 3 (One Leg) for {symbol} ---")
 
     # Dateinamen dynamisch bauen
-    input_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}.csv"
+    input_bars_filename = f"data_{symbol}_M5_signals_{SETUP_NAME}{PHASE_SUFFIX}.csv"
     input_bars_file = os.path.join(CHART_DATA_DIR, input_bars_filename)
 
-    input_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}.csv"
+    input_setups_filename = f"data_{symbol}_M5_setups_{SETUP_NAME}{PHASE_SUFFIX}.csv"
     input_setups_file = os.path.join(CHART_DATA_DIR, input_setups_filename)
 
     # Templates für Output (NEUER NAME)
-    trades_file_template = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_trades_{SETUP_NAME}_london_minRR_maxRR_{{exit_suffix}}.csv")
+    trades_file_template = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_trades_{SETUP_NAME}{PHASE_SUFFIX}_london_minRR_maxRR_{{exit_suffix}}.csv")
     
     # NEU: Stats Ordner erstellen und Pfad anpassen
     stats_dir = os.path.join(CHART_DATA_DIR, "stats")
     os.makedirs(stats_dir, exist_ok=True)
-    output_stats_file = os.path.join(stats_dir, f"data_{symbol}_M5_stats_{SETUP_NAME}_london_minRR_maxRR.csv")
+    output_stats_file = os.path.join(stats_dir, f"data_{symbol}_M5_stats_{SETUP_NAME}{PHASE_SUFFIX}_london_minRR_maxRR.csv")
 
     if not os.path.exists(input_bars_file) or not os.path.exists(input_setups_file):
         print(f"Skipping {symbol}: Input files not found. Run Phase 2 first.")
