@@ -8,7 +8,7 @@ from config import PIP_SIZE_MAP # <--- NEU (wird für Pips-Berechnung benötigt)
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["GBPUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
+SYMBOLS = ["AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # Pfade
 DATA_DIR = "data"

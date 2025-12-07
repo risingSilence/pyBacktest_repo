@@ -14,7 +14,7 @@ from config import PIP_SIZE_MAP
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["GBPUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
+SYMBOLS = ["AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # WICHTIG: Muss exakt so heißen wie in der Phase 2 Datei!
 SETUP_NAME = "ny_hodlod"
@@ -29,7 +29,7 @@ SCENARIO_ID = "london_target_min_max_rr"
 OVERWRITE_STATS_FILE = True  # True = überschreiben, False = neue Datei (_1, _2...) erstellen
 
 # --- RISK CALCULATION CONFIG ---
-MAX_RISK_PER_TRADE = 1.42       # Maximales Risiko pro Trade in % (Hardcap)
+MAX_RISK_PER_TRADE = 1.4        # Maximales Risiko pro Trade in % (Hardcap)
 TARGET_RUIN_PROB_PERCENT = 10   # Akzeptierte Ruin-Wahrscheinlichkeit in % (z.B. 10 = 10%)
 RISK_SIM_TRADES = 50            # Anzahl der Trades, über die der Ruin simuliert wird
 
@@ -48,9 +48,9 @@ MIN_RR_MAP = {
     "GBPJPY": 3.0,
     "EURGBP": 3.0,
     "DXY":    3.0,
-    "US30":   2.5, 
-    "NAS100": 2.5,
-    "US500":  2.5,
+    "US30":   3.0, 
+    "NAS100": 3.0,
+    "US500":  3.0,
     "XAUUSD": 3.0,
 }
 
@@ -670,6 +670,44 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
     else:
         stats["avg_P"] = 0.0
 
+    # --- NEW: Yearly Stats (Grouped by Calendar Year) ---
+    # Wir nutzen rounded_risk_p, damit die Summe der Jahre konsistent mit Total P ist.
+    if "entry_time" in df_filled.columns:
+        # Convert to datetime to extract year safely
+        dates = pd.to_datetime(df_filled["entry_time"])
+        unique_years = sorted(dates.dt.year.unique())
+        
+        sort_col_y = "entry_time" # Should exist
+
+        for year in unique_years:
+            mask_year = (dates.dt.year == year)
+            df_year = df_filled[mask_year]
+            
+            if df_year.empty:
+                continue
+                
+            # 1. Cumulative R/P for Year
+            res_R_year = df_year["result_R"].astype(float)
+            raw_cum_R_year = float(res_R_year.sum())
+            
+            stats[f"cumulative_R_{year}"] = round(raw_cum_R_year, 2)
+            stats[f"cumulative_P_{year}"] = round(raw_cum_R_year * rounded_risk_p, 2)
+            
+            # 2. Max Drawdown for Year (starting fresh at 0 for that year)
+            df_year_sorted = df_year.sort_values(sort_col_y)
+            res_sorted_y = df_year_sorted["result_R"].astype(float)
+            
+            equity_y = res_sorted_y.cumsum()
+            # Start series at 0 to capture drawdown from initial capital of that year
+            eq_series_y = pd.concat([pd.Series([0.0]), equity_y], ignore_index=True)
+            running_max_y = eq_series_y.cummax()
+            drawdowns_y = running_max_y - eq_series_y
+            
+            raw_max_dd_R_y = float(drawdowns_y.max())
+            
+            stats[f"max_drawdown_R_{year}"] = round(raw_max_dd_R_y, 2)
+            stats[f"max_drawdown_P_{year}"] = round(raw_max_dd_R_y * rounded_risk_p, 2)
+
     # --- Holding Time Stats ---
     if "sl_size_pips" in df_filled.columns:
         stats["avg_sl_size_pips"] = float(df_filled["sl_size_pips"].astype(float).mean())
@@ -691,7 +729,7 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
     stats["avg_sl_minutes"] = float(sl_trades["holding_minutes"].astype(float).mean()) if not sl_trades.empty else np.nan
     stats["avg_tp_minutes"] = float(tp_trades["holding_minutes"].astype(float).mean()) if not tp_trades.empty else np.nan
 
-    # --- Drawdowns & Streaks ---
+    # --- Total Drawdowns & Streaks ---
     sort_col = "entry_time" if "entry_time" in df_filled.columns else None
     if sort_col:
         df_sorted = df_filled.sort_values(sort_col)
@@ -817,8 +855,24 @@ def run_phase3_one_leg_for_symbol(symbol: str):
 
     # Save Stats
     if stats_per_exit:
-        # Definierte Reihenfolge laut User-Anforderung
-        ordered_metrics = [
+        # 1. Identify all present years dynamically
+        all_keys = set()
+        for mode in stats_per_exit:
+            all_keys.update(stats_per_exit[mode].keys())
+        
+        # Filter for years based on one known prefix (e.g. cumulative_P_2023)
+        found_years = set()
+        for k in all_keys:
+            if k.startswith("cumulative_P_"):
+                # Extract year part
+                parts = k.split("_")
+                if len(parts) >= 3:
+                    found_years.add(parts[-1])
+        
+        sorted_years = sorted(list(found_years))
+
+        # 2. Build Base Metric List
+        base_metrics_start = [
             "avg_P", 
             "avg_R", 
             "cumulative_P", 
@@ -838,16 +892,31 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             "n_setups", 
             "n_filled", 
             "tag_rate_P",       # Umbenannt (Prozent)
-            
+        ]
+
+        # 3. Add Yearly Metrics dynamically
+        yearly_metrics = []
+        for y in sorted_years:
+            yearly_metrics.extend([
+                f"cumulative_P_{y}",
+                f"cumulative_R_{y}",
+                f"max_drawdown_R_{y}",
+                f"max_drawdown_P_{y}"
+            ])
+
+        base_metrics_end = [
             "avg_holding_hhmm", "avg_holding_hhmm_losers", "avg_holding_hhmm_winners",
             "avg_holding_minutes", "avg_holding_minutes_losers", "avg_holding_minutes_winners",
             "avg_sl_minutes", "avg_sl_size_pips", "avg_sl_time_hhmm",
             "avg_tp_minutes", "avg_tp_time_hhmm"
         ]
+
+        # Combine
+        ordered_metrics = base_metrics_start + yearly_metrics + base_metrics_end
         
         rows = []
         
-        # 1. Performance Metrics
+        # 1. Performance Metrics Rows
         for metric in ordered_metrics:
             row = {"metric": metric}
             for exit_mode in exit_variants:
@@ -855,7 +924,7 @@ def run_phase3_one_leg_for_symbol(symbol: str):
                 row[exit_mode] = val
             rows.append(row)
 
-        # 2. Configuration Metadata
+        # 2. Configuration Metadata Rows
         def _fmt_time(h, m): return f"{h:02d}:{m:02d}"
         
         eff_min_rr = GLOBAL_MIN_RR if USE_GLOBAL_MIN_RR else MIN_RR_MAP.get(symbol, GLOBAL_MIN_RR)
@@ -891,7 +960,6 @@ def run_phase3_one_leg_for_symbol(symbol: str):
         print(f"Stats saved to {final_output_file}")
     
     print(f"Done for {symbol}.\n")
-
 
 def main():
     for sym in SYMBOLS:
