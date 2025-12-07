@@ -11,7 +11,7 @@ import os
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
 
 # WICHTIG: Muss exakt so heißen wie in deiner Phase 2 Datei definiert!
 SETUP_NAME = "hodlod_one_leg_choch_fvg"
@@ -33,9 +33,15 @@ OVERWRITE_STATS_FILE = True  # True = überschreiben, False = neue Datei (_1, _2
 USE_GLOBAL_MIN_RR = False
 GLOBAL_MIN_RR = 3.0
 MIN_RR_MAP = {
-    "AUDUSD": 2.5,
     "EURUSD": 3.0,
     "GBPUSD": 4.0,
+    "AUDUSD": 2.5,
+    "NZDUSD": 3.0,
+    "USDJPY": 3.0,
+    "USDCAD": 3.0,
+    "USDCHF": 3.0,
+    "GBPJPY": 3.0,
+    "EURGBP": 3.0,
 }
 
 # --- MAXIMUM RR CONFIG (NEU) ---
@@ -45,33 +51,48 @@ MIN_RR_MAP = {
 USE_GLOBAL_MAX_RR = False
 GLOBAL_MAX_RR = 10.0
 MAX_RR_MAP = {
-    "AUDUSD": 10.0,
     "EURUSD": 10.0,
     "GBPUSD": 10.0,
+    "AUDUSD": 10.0,
+    "NZDUSD": 10.0,
+    "USDJPY": 10.0,
+    "USDCAD": 10.0,
+    "USDCHF": 10.0,
+    "GBPJPY": 10.0,
+    "EURGBP": 10.0,
 }
 
 # --- NEAR-TP TRAILING CONFIG ---
 NEAR_TP_TRAILING_ENABLED = False
 
-USE_GLOBAL_NEAR_TP_TRIGGER = False 
-GLOBAL_NEAR_TP_TRIGGER_R = 1.75
-NEAR_TP_TRIGGER_R_MAP = {
-    "AUDUSD": 1.75,
-    "EURUSD": 1.75,
-    "GBPUSD": 1.75,
-}
+# NEU: Globaler Offset in Prozent vom individuellen Target-RR
+# Beispiel: 0.10 bedeutet, das Trailing startet, wenn 90% des Targets erreicht sind (10% Offset)
+NEAR_TP_TRAILING_OFFSET_PCT = 0.10  # 10%
+
 
 # SL Buffer (in Pips)
 SL_BUFFER = { 
-    "AUDUSD": 0.0, 
     "EURUSD": 0.0, 
     "GBPUSD": 0.0, 
+    "AUDUSD": 0.0, 
+    "NZDUSD": 0.0, 
+    "USDJPY": 0.0, 
+    "USDCAD": 0.0, 
+    "USDCHF": 0.0, 
+    "GBPJPY": 0.0, 
+    "EURGBP": 0.0, 
 }
 
 PIP_SIZE_MAP = {
-    "AUDUSD": 0.0001,
     "EURUSD": 0.0001,
     "GBPUSD": 0.0001,
+    "AUDUSD": 0.0001,
+    "NZDUSD": 0.0001,
+    "USDJPY": 0.01,
+    "USDCAD": 0.0001,
+    "USDCHF": 0.0001,
+    "GBPJPY": 0.01,
+    "EURGBP": 0.0001,
 }
 
 # --- TIME SETTINGS (NEW YORK TIME) ---
@@ -343,10 +364,18 @@ def _simulate_exit_phase(entry: EntrySpec, df_day: pd.DataFrame, entry_idx: Any,
     
     threshold_long, threshold_short = None, None
     if NEAR_TP_TRAILING_ENABLED and risk_sl_size_pips > 0:
-        if USE_GLOBAL_NEAR_TP_TRIGGER: trigger_r = GLOBAL_NEAR_TP_TRIGGER_R
-        else: trigger_r = NEAR_TP_TRIGGER_R_MAP.get(entry.symbol, GLOBAL_NEAR_TP_TRIGGER_R)
-        d = trigger_r * risk_sl_size_price
-        threshold_long, threshold_short = entry.entry_price + d, entry.entry_price - d
+        # 1. Distanz zum TP berechnen (Reward-Strecke)
+        dist_to_tp = abs(entry.tp_price - entry.entry_price)
+        
+        # 2. Trigger-Distanz berechnen (z.B. 90% der Strecke bei 10% Offset)
+        # Formel: Strecke * (1.0 - Offset)
+        trigger_dist = dist_to_tp * (1.0 - NEAR_TP_TRAILING_OFFSET_PCT)
+        
+        # 3. Thresholds setzen
+        if direction == "buy":
+            threshold_long = entry.entry_price + trigger_dist
+        else:
+            threshold_short = entry.entry_price - trigger_dist
 
     has_sl_label = "swing_low_label" in df_day.columns
     has_sh_label = "swing_high_label" in df_day.columns

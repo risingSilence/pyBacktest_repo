@@ -17,7 +17,7 @@ except ImportError:
 # ---------------------------------
 
 # Liste der Symbole
-SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"]
+SYMBOLS = ["EURUSD", "GBPUSD", "AUDUSD"] #"NZDUSD", "USDJPY", "USDCAD", "USDCHF", "GBPJPY", "EURGBP"]
 
 # Setup-Name für Dateinamen
 SETUP_NAME = "hodlod_one_leg_choch_fvg"
@@ -34,24 +34,44 @@ BASE_DATA_DIR = "data"             # Hier liegt der Phase 1 Output
 CHART_DATA_DIR = "charting/data"   # Hierhin schreiben wir für die HTML
 
 # Parameter
+# WICHTIG - EURUSD ist der "ANKER" für andere Paare!
+# die anderen Multis sind von der durschnittlichen Volatilität zwischen 8am und 12pm NY abgeleitet.
 PIP_SIZE_MAP = {
-    "AUDUSD": 0.0001,
     "EURUSD": 0.0001,
     "GBPUSD": 0.0001,
+    "AUDUSD": 0.0001,
+    "NZDUSD": 0.0001,
+    "USDJPY": 0.01,
+    "USDCAD": 0.0001,
+    "USDCHF": 0.0001,
+    "GBPJPY": 0.01,
+    "EURGBP": 0.0001,
 }
 
 # NEU: Reduzierte Range-Vorgaben (One Leg)
 MIN_RANGE = {
-    "AUDUSD": 5.0,
     "EURUSD": 7.0,
-    "GBPUSD": 9.0,
+    "GBPUSD": 7.5,
+    "AUDUSD": 6.2,
+    "NZDUSD": 5.3,
+    "USDJPY": 4.5,
+    "USDCAD": 7.3,
+    "USDCHF": 6.3,
+    "GBPJPY": 10.0,
+    "EURGBP": 3.6,
 }
 
 # NEU: FVG Mindestgröße für das einzelne Leg
 MIN_SINGLE_FVG = {
-    "AUDUSD": 0.3,
     "EURUSD": 0.5,
-    "GBPUSD": 0.8,
+    "GBPUSD": 0.5,
+    "AUDUSD": 0.4,
+    "NZDUSD": 0.4,
+    "USDJPY": 0.3,
+    "USDCAD": 0.5,
+    "USDCHF": 0.5,
+    "GBPJPY": 0.7,
+    "EURGBP": 0.3,
 }
 
 # NY-Zeitfenster in Minuten seit 00:00
