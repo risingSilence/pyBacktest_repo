@@ -606,7 +606,11 @@ def run_phase3_one_leg_for_symbol(symbol: str):
 
     # Templates für Output (NEUER NAME)
     trades_file_template = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_trades_{SETUP_NAME}_london_minRR_maxRR_{{exit_suffix}}.csv")
-    output_stats_file = os.path.join(CHART_DATA_DIR, f"data_{symbol}_M5_stats_{SETUP_NAME}_london_minRR_maxRR.csv")
+    
+    # NEU: Stats Ordner erstellen und Pfad anpassen
+    stats_dir = os.path.join(CHART_DATA_DIR, "stats")
+    os.makedirs(stats_dir, exist_ok=True)
+    output_stats_file = os.path.join(stats_dir, f"data_{symbol}_M5_stats_{SETUP_NAME}_london_minRR_maxRR.csv")
 
     if not os.path.exists(input_bars_file) or not os.path.exists(input_setups_file):
         print(f"Skipping {symbol}: Input files not found. Run Phase 2 first.")

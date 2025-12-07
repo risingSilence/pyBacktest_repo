@@ -7,7 +7,7 @@ __pycache__/
 
 # --- Große Rohdaten ---
 # Pfad angepasst: Da dukascopy_m1 IM pyBacktest Ordner liegt
-pyBacktest/dukascopy_m1/
+pyBacktest/dukascopy_m1/*.csv
 
 # --- Generierte Charting Dateien ---
 pyBacktest/charting/data.json
