@@ -14,7 +14,7 @@ from config import PIP_SIZE_MAP
 # ==============================================================================
 
 # Liste der Symbole
-SYMBOLS = ["AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
+SYMBOLS = ["EURUSD"] #"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "GBPJPY", "EURGBP", "DXY", "US30", "NAS100", "US500", "XAUUSD"]
 
 # WICHTIG: Muss exakt so heißen wie in der Phase 2 Datei!
 SETUP_NAME = "ny_hodlod"
@@ -43,14 +43,14 @@ MIN_RR_MAP = {
     "AUDUSD": 2.5,
     "NZDUSD": 3.0,
     "USDCAD": 3.0,
-    "USDCHF": 3.0,
+    "USDCHF": 3.5,
     "USDJPY": 3.0,
-    "GBPJPY": 3.0,
-    "EURGBP": 3.0,
+    "GBPJPY": 2.5,
+    "EURGBP": 2.0,
     "DXY":    3.0,
-    "US30":   3.0, 
+    "US30":   2.0, 
     "NAS100": 3.0,
-    "US500":  3.0,
+    "US500":  2.0,
     "XAUUSD": 3.0,
 }
 
