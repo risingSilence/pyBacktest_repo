@@ -670,15 +670,17 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
     else:
         stats["avg_P"] = 0.0
 
-    # --- NEW: Yearly Stats (Grouped by Calendar Year) ---
-    # Wir nutzen rounded_risk_p, damit die Summe der Jahre konsistent mit Total P ist.
+    # --- Time-based Grouping (Yearly & Weekday) ---
     if "entry_time" in df_filled.columns:
-        # Convert to datetime to extract year safely
+        # Convert to datetime 
         dates = pd.to_datetime(df_filled["entry_time"])
+        sort_col_time = "entry_time"
+
+        # -----------------------------------------------------
+        # A) Yearly Stats
+        # -----------------------------------------------------
         unique_years = sorted(dates.dt.year.unique())
         
-        sort_col_y = "entry_time" # Should exist
-
         for year in unique_years:
             mask_year = (dates.dt.year == year)
             df_year = df_filled[mask_year]
@@ -694,7 +696,7 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
             stats[f"cumulative_P_{year}"] = round(raw_cum_R_year * rounded_risk_p, 2)
             
             # 2. Max Drawdown for Year (starting fresh at 0 for that year)
-            df_year_sorted = df_year.sort_values(sort_col_y)
+            df_year_sorted = df_year.sort_values(sort_col_time)
             res_sorted_y = df_year_sorted["result_R"].astype(float)
             
             equity_y = res_sorted_y.cumsum()
@@ -707,6 +709,48 @@ def compute_stats_comprehensive(df_trades: pd.DataFrame) -> Dict[str, Any]:
             
             stats[f"max_drawdown_R_{year}"] = round(raw_max_dd_R_y, 2)
             stats[f"max_drawdown_P_{year}"] = round(raw_max_dd_R_y * rounded_risk_p, 2)
+
+        # -----------------------------------------------------
+        # B) Weekday Stats (Mon, Tue, Wed, Thu, Fri)
+        # -----------------------------------------------------
+        # 0=Monday, 4=Friday
+        weekday_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri"}
+        
+        for wd_idx in range(5): # 0 to 4
+            wd_name = weekday_map[wd_idx]
+            mask_wd = (dates.dt.dayofweek == wd_idx)
+            df_wd = df_filled[mask_wd]
+            
+            if df_wd.empty:
+                # Optional: Nullen setzen, falls keine Trades an diesem Wochentag
+                stats[f"cumulative_R_{wd_name}"] = 0.0
+                stats[f"cumulative_P_{wd_name}"] = 0.0
+                stats[f"max_drawdown_R_{wd_name}"] = 0.0
+                stats[f"max_drawdown_P_{wd_name}"] = 0.0
+                continue
+            
+            # 1. Cumulative R/P for Weekday
+            res_R_wd = df_wd["result_R"].astype(float)
+            raw_cum_R_wd = float(res_R_wd.sum())
+            
+            stats[f"cumulative_R_{wd_name}"] = round(raw_cum_R_wd, 2)
+            stats[f"cumulative_P_{wd_name}"] = round(raw_cum_R_wd * rounded_risk_p, 2)
+            
+            # 2. Max Drawdown for Weekday (Sorted by Time)
+            # Wir sortieren trades DIESES Wochentags chronologisch
+            df_wd_sorted = df_wd.sort_values(sort_col_time)
+            res_sorted_wd = df_wd_sorted["result_R"].astype(float)
+            
+            equity_wd = res_sorted_wd.cumsum()
+            eq_series_wd = pd.concat([pd.Series([0.0]), equity_wd], ignore_index=True)
+            running_max_wd = eq_series_wd.cummax()
+            drawdowns_wd = running_max_wd - eq_series_wd
+            
+            raw_max_dd_R_wd = float(drawdowns_wd.max())
+            
+            stats[f"max_drawdown_R_{wd_name}"] = round(raw_max_dd_R_wd, 2)
+            stats[f"max_drawdown_P_{wd_name}"] = round(raw_max_dd_R_wd * rounded_risk_p, 2)
+
 
     # --- Holding Time Stats ---
     if "sl_size_pips" in df_filled.columns:
@@ -864,12 +908,18 @@ def run_phase3_one_leg_for_symbol(symbol: str):
         found_years = set()
         for k in all_keys:
             if k.startswith("cumulative_P_"):
-                # Extract year part
                 parts = k.split("_")
                 if len(parts) >= 3:
-                    found_years.add(parts[-1])
+                    candidate = parts[-1]
+                    # Nur echte Zahlen als Jahre aufnehmen (keine Wochentage)
+                    if candidate.isdigit():
+                        found_years.add(candidate)
         
         sorted_years = sorted(list(found_years))
+        
+        # Define combined suffixes: Years first, then Weekdays
+        # Dies ist die Reihenfolge innerhalb jeder Gruppe (P, R, DD...)
+        suffixes = sorted_years + ["Mon", "Tue", "Wed", "Thu", "Fri"]
 
         # 2. Build Base Metric List
         base_metrics_start = [
@@ -883,7 +933,7 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             "avg_drawdown_R", 
             "avg_drawdown_P",
             
-            "win_rate_P",       # Umbenannt (Prozent)
+            "win_rate_P",
             "avg_winner_R", 
             "avg_loser_R",
             "max_win_streak", 
@@ -891,18 +941,21 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             
             "n_setups", 
             "n_filled", 
-            "tag_rate_P",       # Umbenannt (Prozent)
+            "tag_rate_P",
         ]
 
-        # 3. Add Yearly Metrics dynamically
-        yearly_metrics = []
-        for y in sorted_years:
-            yearly_metrics.extend([
-                f"cumulative_P_{y}",
-                f"cumulative_R_{y}",
-                f"max_drawdown_R_{y}",
-                f"max_drawdown_P_{y}"
-            ])
+        # 3. Add Time-Based Metrics (Grouped by Metric Type as requested)
+        # Gruppe 1: Alle Cumulative P (Jahre... Wochentage)
+        group_cum_P = [f"cumulative_P_{s}" for s in suffixes]
+        
+        # Gruppe 2: Alle Cumulative R (Jahre... Wochentage)
+        group_cum_R = [f"cumulative_R_{s}" for s in suffixes]
+        
+        # Gruppe 3: Alle Max Drawdown R (Jahre... Wochentage)
+        group_dd_R  = [f"max_drawdown_R_{s}" for s in suffixes]
+        
+        # Gruppe 4: Alle Max Drawdown P (Jahre... Wochentage)
+        group_dd_P  = [f"max_drawdown_P_{s}" for s in suffixes]
 
         base_metrics_end = [
             "avg_holding_hhmm", "avg_holding_hhmm_losers", "avg_holding_hhmm_winners",
@@ -911,8 +964,15 @@ def run_phase3_one_leg_for_symbol(symbol: str):
             "avg_tp_minutes", "avg_tp_time_hhmm"
         ]
 
-        # Combine
-        ordered_metrics = base_metrics_start + yearly_metrics + base_metrics_end
+        # Combine everything
+        ordered_metrics = (
+            base_metrics_start + 
+            group_cum_P + 
+            group_cum_R + 
+            group_dd_R + 
+            group_dd_P + 
+            base_metrics_end
+        )
         
         rows = []
         
